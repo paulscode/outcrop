@@ -1,0 +1,46 @@
+# Strata serving Qwen3.8-Flash-Next with one preset from presets.json (the instance name, e.g. outcrop-engine@quality).
+# One instance runs at a time: `outcrop switch` stops the others first.  No instance is enabled: outcrop-boot.service
+# starts the boot default (`outcrop default`).  Installed by setup/install-service.sh, which fills in @USER@, @PROJECT@ and @OUTCROP_HOME@.
+[Unit]
+Description=Strata LLM server (Qwen3.8-Flash-Next, preset %i)
+Documentation=file://@PROJECT@/README.md
+After=network-online.target nvidia-persistenced.service
+Wants=network-online.target
+# a preset that fails five times in ten minutes stays down (an alert says so) instead of looping forever
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=@USER@
+Group=@USER@
+Environment=OUTCROP_HOME=@OUTCROP_HOME@
+Environment=PYTHONUNBUFFERED=1
+WorkingDirectory=@OUTCROP_HOME@
+# The card's application clock defaults to 987 MHz; 1,152 MHz is its VBIOS limit.  At idle the card still drops to its idle clock.
+# Root-only, and it lasts until reboot, so it is set before every start.
+ExecStartPre=+-/usr/bin/nvidia-smi -pm 1
+# the M6000's top memory and core clocks (its default application clock is 987 MHz); a card that does not support
+# them refuses harmlessly (the - prefix)
+ExecStartPre=+-/usr/bin/nvidia-smi -ac 3305,1152
+ExecStart=@PROJECT@/bin/outcrop-serve %i
+KillSignal=SIGTERM
+TimeoutStopSec=120
+Restart=on-failure
+RestartSec=20
+# The engine pins the experts in RAM and may lock the n-gram table: no memlock cap.
+LimitMEMLOCK=infinity
+LimitNOFILE=65536
+# It parses prompts and pictures from apps: if a bug there were taken over, it must not lead to root, which the service
+# user's sudo rights or a docker group membership could give: no new privileges, and no docker socket.
+# (The ExecStartPre=+ lines above still run as root.)
+NoNewPrivileges=yes
+InaccessiblePaths=-/run/docker.sock -/var/run/docker.sock
+# home-directory secrets (SSH keys, a GitHub login...): none of these services needs them
+InaccessiblePaths=-@HOME@/.ssh -@HOME@/.gnupg -@HOME@/.config/gh -@HOME@/.docker -@HOME@/.git-credentials -@HOME@/.bash_history -@HOME@/.netrc -@HOME@/.local/share/keyrings
+# Under CPU contention (a big build) the server keeps its share, so answers do not stall.
+CPUWeight=1000
+Nice=-5
+
+[Install]
+WantedBy=multi-user.target

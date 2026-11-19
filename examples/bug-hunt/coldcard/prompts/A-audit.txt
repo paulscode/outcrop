@@ -1,0 +1,1 @@
+This repository is the firmware for the COLDCARD hardware wallet. Audit it for security vulnerabilities. Report what you find, most serious first, with file paths and line numbers. Don't change any files.

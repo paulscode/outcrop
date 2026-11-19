@@ -1,0 +1,59 @@
+# The web console (Outcrop): HTTPS on 443 with the private CA's certificate, and port 80 for the CA certificate and a redirect.
+# Runs as the LLM user, sandboxed; it controls the LLM units only through the polkit rule (setup/polkit/50-outcrop.rules).
+[Unit]
+Description=LLM web console (Outcrop) on HTTPS
+Documentation=file://@PROJECT@/docs/CONSOLE.md
+After=network-online.target outcrop-gateway.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+Group=@USER@
+SupplementaryGroups=adm
+Environment=OUTCROP_HOME=@OUTCROP_HOME@
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=@PROJECT@/bin/outcrop-console
+Restart=always
+RestartSec=3
+TimeoutStopSec=20
+UMask=0077
+LimitNOFILE=65536
+MemoryMax=3G
+TasksMax=512
+# Ports 80 and 443, and nothing else
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=yes
+ProtectSystem=strict
+# the service user may be in the docker group (build-ui.sh): the socket would be root to anyone who took over this service
+InaccessiblePaths=-/run/docker.sock -/var/run/docker.sock
+# home-directory secrets (SSH keys, a GitHub login...): none of these services needs them
+InaccessiblePaths=-@HOME@/.ssh -@HOME@/.gnupg -@HOME@/.config/gh -@HOME@/.docker -@HOME@/.git-credentials -@HOME@/.bash_history -@HOME@/.netrc -@HOME@/.local/share/keyrings
+ProtectHome=read-only
+# its state, the rendered run configs, presets.json (the editor) and bench results (the lab)
+ReadWritePaths=@OUTCROP_HOME@/state @OUTCROP_HOME@/cfg @OUTCROP_HOME@/presets.json @PROJECT@/bench/results
+PrivateTmp=yes
+DevicePolicy=closed
+# every NVIDIA card (major 195, "nvidia" in /proc/devices) and the control device: the console reads the engine's card
+DeviceAllow=char-nvidia rw
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+# mincore(2): how much of a pack is in the page cache (the switch estimate); not in @system-service
+SystemCallFilter=mincore
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

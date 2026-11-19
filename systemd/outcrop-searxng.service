@@ -1,0 +1,31 @@
+# The chat's web search (docs/SECURITY.md, "Web access for the chat"): SearXNG, a metasearch engine, in a container on
+# 127.0.0.1:8888 only.  It asks several search engines without cookies or an account; no API key ties your queries to
+# you.  Read-only, no capabilities, its own unprivileged user; settings in /etc/outcrop-searxng (setup/searxng).
+# The image is pinned by digest: to update, put a newer release's digest in setup/install-web.sh (IMAGE) and deploy.
+[Unit]
+Description=LLM chat web search (SearXNG, local only)
+Documentation=file://@PROJECT@/docs/SECURITY.md
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStartPre=-/usr/bin/docker rm -f outcrop-searxng
+# its own network, with the firewall dropping its traffic to the LAN (setup/searxng/net.sh)
+ExecStartPre=/usr/local/libexec/outcrop-searxng-net
+ExecStart=/usr/bin/docker run --rm --name outcrop-searxng --pull=never \
+  --user 977:977 --read-only --cap-drop ALL --security-opt no-new-privileges \
+  --memory 768m --pids-limit 256 --cpus 2 --log-opt max-size=10m --log-opt max-file=3 \
+  -e FORCE_OWNERSHIP=false -e GRANIAN_HOST=0.0.0.0 \
+  --tmpfs /var/cache/searxng:uid=977,gid=977,mode=0700 --tmpfs /tmp:uid=977,gid=977,mode=0700 \
+  -v /etc/outcrop-searxng:/etc/searxng:ro \
+  --network outcrop-searxng -p 127.0.0.1:8888:8080 \
+  @SEARXNG_IMAGE@
+ExecStop=/usr/bin/docker stop -t 10 outcrop-searxng
+Restart=always
+RestartSec=5
+TimeoutStartSec=60
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,1 @@
+This repository is the firmware for the COLDCARD hardware wallet. Review how it generates new wallet seeds. Is there any weakness in how that is done? Report what you find with file paths and line numbers. Don't change any files.

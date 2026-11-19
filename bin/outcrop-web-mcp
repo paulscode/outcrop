@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+"""outcrop-web-mcp  - web search from your LLM server, as a local (stdio) MCP server, for apps that can only start MCP
+servers as programs on their own machine.  It forwards every message to the server's MCP endpoint (POST /tools/mcp on
+the gateway) with your token, and writes the answers back.  Python 3.9+, standard library only: copy this one file to the
+computer the app runs on.
+
+    outcrop-web-mcp --url https://YOUR-SERVER.local:8443/tools/mcp [--token-file ~/.config/outcrop/web-token] [--ca FILE]
+
+The token needs the `web` scope (outcrop token create NAME --scope inference,web, or the console's Connect page).  It is
+read from $OUTCROP_WEB_TOKEN, else from --token-file, so it never has to appear in an app's settings.  --ca: the server's CA
+certificate (http://YOUR-SERVER.local/ca.crt), if this computer does not trust it already.  Apps that can reach a remote
+MCP server over HTTP do not need this: give them the URL and the token as a Bearer header.
+
+An app's MCP settings, for example:
+    {"mcpServers": {"web": {"command": "python3", "args": ["/path/to/outcrop-web-mcp"]}}}
+"""
+import argparse
+import json
+import os
+import ssl
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+ap.add_argument("--url", default=os.environ.get("OUTCROP_WEB_URL"),
+                help="the server's MCP address, https://YOUR-SERVER.local:8443/tools/mcp (`outcrop connect` on the server prints it)")
+ap.add_argument("--token-file", default=os.environ.get("OUTCROP_WEB_TOKEN_FILE", str(Path.home() / ".config" / "outcrop" / "web-token")))
+ap.add_argument("--ca", default=os.environ.get("OUTCROP_WEB_CA"), help="the server's CA certificate (PEM)")
+ap.add_argument("--timeout", type=float, default=90)
+a = ap.parse_args()
+if not a.url:
+    sys.exit("outcrop-web-mcp: which server? Pass --url https://YOUR-SERVER.local:8443/tools/mcp or set OUTCROP_WEB_URL "
+             "(on the server, `outcrop connect` prints the address)")
+
+
+def log(*x):
+    print("outcrop-web-mcp:", *x, file=sys.stderr, flush=True)
+
+
+token = os.environ.get("OUTCROP_WEB_TOKEN", "").strip()
+if not token:
+    try:
+        token = Path(a.token_file).expanduser().read_text().strip()
+    except OSError:
+        log(f"no token: set OUTCROP_WEB_TOKEN or put one in {a.token_file}")
+        sys.exit(2)
+ctx = ssl.create_default_context(cafile=a.ca) if a.ca else ssl.create_default_context()
+
+
+def reply_error(mid, message):
+    if mid is not None:
+        out({"jsonrpc": "2.0", "id": mid, "error": {"code": -32000, "message": message}})
+
+
+def out(obj):
+    sys.stdout.write(json.dumps(obj) + "\n")
+    sys.stdout.flush()
+
+
+def forward(line: str):
+    try:
+        msg = json.loads(line)
+    except ValueError:
+        log("not JSON from the app:", line[:200])
+        return
+    mid = msg.get("id") if isinstance(msg, dict) else None
+    req = urllib.request.Request(a.url, line.encode(), method="POST", headers={
+        "Authorization": f"Bearer {token}", "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream", "User-Agent": "outcrop-web-mcp/1.0",
+        "MCP-Protocol-Version": "2025-06-18"})
+    try:
+        with urllib.request.urlopen(req, timeout=a.timeout, context=ctx) as r:
+            body = r.read()
+            if r.status == 202 or not body.strip():
+                return
+            out(json.loads(body))
+    except urllib.error.HTTPError as e:
+        try:
+            detail = json.loads(e.read()).get("error", {})
+            detail = detail.get("message") if isinstance(detail, dict) else str(detail)
+        except ValueError:
+            detail = e.reason
+        why = {401: "the server refused the token", 403: "the token may not use the web tools (it needs the web scope)",
+               429: "too many requests: wait a little"}.get(e.code, f"the server answered {e.code}")
+        log(f"{why}: {detail}")
+        reply_error(mid, f"{why}: {detail}")
+    except (urllib.error.URLError, OSError) as e:
+        reason = getattr(e, "reason", e)
+        hint = " (is the server's CA trusted? use --ca)" if "CERTIFICATE" in str(reason).upper() else ""
+        log(f"cannot reach {a.url}: {reason}{hint}")
+        reply_error(mid, f"cannot reach the LLM server: {reason}{hint}")
+
+
+log(f"forwarding to {a.url}")
+for line in sys.stdin:
+    if line.strip():
+        forward(line)

@@ -1,0 +1,1 @@
+{"id": "msg_8a9608d73b44454792e27fc0", "type": "message", "role": "assistant", "model": "qwen3.8-flash-next", "content": [{"type": "text", "text": "Hi there! How can I help you today?"}], "stop_reason": "end_turn", "stop_sequence": null, "usage": {"input_tokens": 1, "output_tokens": 11, "cache_creation_input_tokens": 6, "cache_read_input_tokens": 8}}

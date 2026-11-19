@@ -1,0 +1,27 @@
+# Renews the console's certificate when it ends within 30 days (and restarts the console to load it).
+[Unit]
+Description=Renew the LLM console's TLS certificate when due
+
+[Service]
+Type=oneshot
+# waiting for the gateway to be idle can take as long as the longest prompt
+TimeoutStartSec=6h
+User=@USER@
+Environment=OUTCROP_HOME=@OUTCROP_HOME@
+Environment=PYTHONPATH=@PROJECT@/console
+ExecStart=@OUTCROP_HOME@/venv/outcrop/bin/python -m outcrop.console.admin tls renew --if-due
+# sandboxed like the other services: it writes only the TLS files and the audit log in $OUTCROP_HOME/state, and restarts
+# the console and the gateway through the polkit rule (no sudo)
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=@OUTCROP_HOME@/state
+PrivateTmp=yes
+PrivateDevices=yes
+InaccessiblePaths=-/run/docker.sock -/var/run/docker.sock
+InaccessiblePaths=-@HOME@/.ssh -@HOME@/.gnupg -@HOME@/.config/gh -@HOME@/.docker -@HOME@/.git-credentials -@HOME@/.bash_history -@HOME@/.netrc -@HOME@/.local/share/keyrings
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes

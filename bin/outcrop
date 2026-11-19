@@ -1,0 +1,466 @@
+#!/usr/bin/env python3
+"""outcrop - run, switch and inspect the local LLM server (Strata + Qwen3.8-Flash-Next), and control access to it.
+
+  outcrop [status]          what runs now, the boot default, access, addresses for apps, GPU and RAM
+  outcrop list              the presets, with the default (*) and the running one (>)
+  outcrop switch PRESET     run PRESET now (the boot default stays); new requests wait at the gateway meanwhile
+         [--cancel]        cancel running requests instead of letting them finish
+  outcrop default [PRESET]  show, or set, the preset started when the computer boots
+  outcrop start | stop      start the default preset (if nothing runs) | stop the server (it starts again at boot)
+  outcrop restart           restart the running preset (e.g. after editing presets.json)
+  outcrop logs [-f] [N]     the server's journal and the engine log (last N lines, default 60)
+  outcrop test | bench      a quick answer check | a quick greedy speed check (about a minute)
+  outcrop connect           how to point apps at the server
+
+Hardware profiles (profiles/: which presets this machine gets, from its GPU and RAM):
+  outcrop profile [detect]  this machine's GPU, RAM and disk, and the profile that fits it
+  outcrop profile list | show NAME | diff NAME | apply NAME [--yes]
+
+API access (the gateway on ports 8080 and 11434):
+  outcrop token list | create NAME [--save FILE] | import NAME | show NAME | rotate NAME [--grace 24h]
+               | revoke NAME [--disconnect]
+               | set NAME [--scope ...] [--expires 30d] [--cidr 192.168.1.0/24] [--listener ollama] [--rpm N] [--concurrency N]
+  outcrop auth [open 30m [--only IP] [--listener ollama] | close | tokenless on|off [--only IP]]
+  outcrop gateway status | restart [--when-idle] [--timeout S] | wait-idle [--console] [--timeout S] | bypass | restore
+  outcrop audit [-n 50] [--kind token.*]
+  outcrop schedule [list | add 22:00 quality-1m [--days mon,tue] | remove ID | on ID | off ID]   switches at set times
+
+The console (https://YOUR-SERVER.local, where YOUR-SERVER is this computer's hostname):
+  outcrop console passwd [--generate] | sessions [--revoke-all] | url | ca | tls renew [--add-name NAME]
+  outcrop console backup [FILE] [--secrets] [--no-chats] | restore FILE
+  outcrop alerts telegram | test | status | off | commands on|off
+  outcrop desktop on | off  the graphical desktop for a session (off is the default)
+
+Presets live in $OUTCROP_HOME/presets.json (default ~/.outcrop), made from a hardware profile and editable in the console.
+Each preset runs as the systemd unit outcrop-engine@PRESET.
+"""
+import os
+import socket
+import subprocess
+import sys
+from pathlib import Path
+
+PROJECT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT / "lib"))
+import outcrop_control as LC  # noqa: E402
+import profiles as PF  # noqa: E402
+import strata_presets as SP  # noqa: E402
+
+B, D, G, Y, R, X = "\033[1m", "\033[2m", "\033[32m", "\033[33m", "\033[31m", "\033[0m"
+if not sys.stdout.isatty():
+    B = D = G = Y = R = X = ""
+TTY = sys.stdout.isatty()
+
+
+def run(cmd, sudo=False):
+    if sudo and os.geteuid() != 0:
+        ok = subprocess.run(["sudo", "-n", "true"], capture_output=True).returncode == 0
+        cmd = ["sudo", "-n", *cmd] if ok else ["sudo", *cmd]
+    return subprocess.run(cmd, text=True)
+
+
+def cfg():
+    return SP.load()
+
+
+def public_port() -> int:
+    c = cfg()
+    if SP.gateway_mode(c) or SP.bypass():
+        return int(c.get("gateway", {}).get("port", 8080))
+    return int(c.get("server", {}).get("port", 8080))
+
+
+def ollama_port() -> int:
+    return int(cfg().get("gateway", {}).get("ollama_port", 11434))
+
+
+def lan_addresses():
+    """The IPv4 LAN addresses, without container and VPN interfaces (the same rule as the gateway's)."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "console"))
+    from outcrop.common.config import lan_addresses as lan
+    return [a for a in lan() if ":" not in a]
+
+
+def local_token():
+    try:
+        return (SP.OUTCROP_HOME / "state" / "local_token").read_text().strip() or None
+    except OSError:
+        return None
+
+
+def outcrop_cli(argv):
+    sys.path.insert(0, str(PROJECT / "console"))
+    from outcrop import cli
+    sys.exit(cli.main(argv))
+
+
+# ---------------------------------------------------------------------------------------------------------- commands
+
+def cmd_list(_):
+    c = cfg()
+    dflt = LC.default_preset()
+    now = {n for n, _ in LC.running()}
+    for n, p in c["presets"].items():
+        mark = (">" if n in now else " ") + ("*" if n == dflt else " ")
+        ctx = int(p["context"])
+        size = f"{ctx / 1048576:g}M" if ctx >= 1048576 else f"{ctx // 1024}K"
+        print(f"{mark} {B}{n:14s}{X} {p['pack']:8s} {size:>5s} ctx  {D}{p.get('description', '')}{X}")
+    print(f"{D}> running   * started at boot{X}")
+
+
+def access_line() -> str | None:
+    try:
+        sys.path.insert(0, str(PROJECT / "console"))
+        from outcrop import cli
+        from outcrop.common import db
+        con = db.connect()
+        try:
+            return cli.auth_summary(con)
+        finally:
+            con.close()
+    except Exception as e:  # the console's database is optional for `status`
+        return f"{D}unknown ({type(e).__name__}){X}"
+
+
+def cmd_status(_):
+    c = cfg()
+    now = LC.running()
+    dflt = LC.default_preset()
+    h = LC.health()
+    name = now[0][0] if now else None
+    print(f"{B}Preset:{X}   {G + name + X if name else Y + 'nothing running' + X}"
+          + (f"  ({c['presets'].get(name, {}).get('description', '')})" if name else ""))
+    print(f"{B}Default:{X}  {dflt or Y + 'none (nothing starts at boot)' + X}")
+    if name:
+        unit = LC.UNIT.format(name)
+        state = "answering" if h and h.get("loaded") else (
+            "starting" if LC.unit_state(unit) in ("active", "activating") else "stopped")
+        if h:
+            p = c["presets"].get(name, {})
+            print(f"{B}Server:{X}   {state}; model {h.get('model')}, pack {p.get('pack', '?')}, context {h.get('max_context')} "
+                  f"tokens, pictures {'on' if h.get('images') else 'off'}")
+            st = LC.strata("/status") or {}
+            if st.get("busy"):
+                print(f"{B}Now:{X}      answering a request ({st.get('tokens_per_s', '?')} tokens/s)")
+        else:
+            print(f"{B}Server:{X}   {state}")
+        up = LC.out(["systemctl", "show", unit, "-p", "ActiveEnterTimestamp", "--value"])
+        if up:
+            print(f"{B}Since:{X}    {up}")
+    if SP.gateway_mode(c) or SP.bypass():
+        line = access_line()
+        if SP.bypass():
+            line = f"{Y}{B}BYPASS{X}{Y}: Strata serves the LAN with the emergency key (`outcrop gateway restore`){X}"
+        if line:
+            print(f"{B}Access:{X}   {line}")
+    else:
+        k = SP.api_key(c)
+        print(f"{B}Access:{X}   {'API key required' if k not in ('none', '', None) else Y + 'no API key (open to the LAN)' + X}"
+              f"{D}; the gateway is not enabled{X}")
+    # one line per card; with several, the one presets.json names (lib/profiles.py), else the first
+    want = str((SP.load().get("common") or {}).get("env", {}).get("CUDA_VISIBLE_DEVICES", "")) if SP.PRESETS_FILE.exists() else ""
+    rows = [r.split(", ") for r in LC.out(["nvidia-smi", "--query-gpu=uuid,memory.used,memory.total,temperature.gpu,power.draw,clocks.sm",
+                                           "--format=csv,noheader,nounits"]).splitlines()]
+    g = next((r for r in rows if len(r) == 6 and r[0] == want), next((r for r in rows if len(r) == 6), None))
+    if g:
+        try:
+            watts = f"{float(g[4]):.0f} W"
+        except ValueError:                               # "[N/A]" on some cards
+            watts = "power n/a"
+        print(f"{B}GPU:{X}      {g[1]} / {g[2]} MiB, {g[3]} C, {watts}, {g[5]} MHz")
+    mem = {k: int(v.split()[0]) for k, v in (ln.split(":", 1) for ln in open("/proc/meminfo")) if k in ("MemTotal", "MemAvailable")}
+    print(f"{B}RAM:{X}      {(mem['MemTotal'] - mem['MemAvailable']) / 2**20:.0f} GiB used of {mem['MemTotal'] / 2**20:.0f} GiB")
+    cmd_connect(None, short=True)
+
+
+def cmd_connect(_, short=False):
+    c = cfg()
+    s = c.get("server", {})
+    pt = public_port()
+    op = ollama_port()
+    hosts = lan_addresses() + [socket.gethostname() + ".local"]
+    if short:
+        print(f"{B}API:{X}      " + "  ".join(f"http://{h}:{pt}/v1" for h in hosts[:2]) + f"  {D}(outcrop connect for details){X}")
+        return
+    gw = SP.gateway_mode(c)
+    h0 = hosts[0] if hosts else "127.0.0.1"
+    key_txt = ("a token from `outcrop token create NAME` (or the console's Connect page)" if gw else
+               "the key in " + str(SP.OUTCROP_HOME / "state" / "api_key") if SP.api_key(c) not in ("none", "", None)
+               else "any text (no key is checked)")
+    print(f"""{B}OpenAI-compatible apps{X} (Open WebUI, LibreChat, Continue, Cline, Aider, Zed, LangChain, the openai SDK, ...)
+  Base URL:  http://{h0}:{pt}/v1        (also http://{socket.gethostname()}.local:{pt}/v1)
+  API key:   {key_txt}
+  Model:     {s.get('model_id', 'qwen3.8-flash-next')}   (any name works; GET /v1/models also lists qwen3.8-flash-next:<preset>)
+  Endpoints: /v1/chat/completions, /v1/responses, /v1/models
+
+{B}HTTPS{X} (for apps that trust the server's CA: http://{socket.gethostname()}.local/ca)
+  https://{socket.gethostname()}.local:{c.get('gateway', {}).get('https_port', 8443)}/v1   (the same API; the token does not cross the LAN in the clear)
+
+{B}Anthropic-compatible apps{X} (Claude Code, the anthropic SDK)
+  ANTHROPIC_BASE_URL=http://{h0}:{pt}   ANTHROPIC_AUTH_TOKEN=<token>   endpoint /v1/messages
+
+{B}Ollama-only apps{X}
+  http://{h0}:{op}   (send the token as Authorization: Bearer <token>; no embeddings, no model pulls)
+
+{B}Browser chat{X}
+  http://{h0}:{pt}/   (paste a token into its Settings)
+
+{B}Check from another computer{X}
+  curl http://{h0}:{pt}/v1/models -H "Authorization: Bearer <token>\"""")
+
+
+def show_switch(ev, state):
+    """Print a switch's progress: one line per phase, with a live counter."""
+    t = ev.get("type")
+    if t == "plan":
+        bits = []
+        if ev.get("warm") is not None:
+            bits.append(f"{ev['warm'] * 100:.0f}% of the pack in the page cache")
+        if ev.get("estimate_s"):
+            bits.append(f"about {ev['estimate_s']:.0f} s last times")
+        if ev.get("low_ram"):
+            bits.append(f"{Y}low RAM: {ev['ram_avail_gib']:.0f} of {ev['ram_need_gib']} GiB{X}")
+        if bits:
+            print(f"{D}{'; '.join(bits)}{X}")
+    elif t == "phase":
+        if state.get("live"):
+            print()
+            state["live"] = False
+        if ev["phase"] not in ("plan",):
+            extra = ""
+            if ev.get("slots"):
+                extra = f" ({ev['slots']} experts, {ev.get('vram')} GiB of VRAM)"
+            elif ev.get("count"):
+                extra = f" ({ev['count']})"
+            print(f"  {ev['label']}{extra}", flush=True)
+    elif t == "experts_loaded":
+        print(f"    {D}{ev.get('gib')} GiB at {ev.get('rate')} GiB/s{X}", flush=True)
+    elif t == "progress" and TTY:
+        tgt = f" of about {ev['target_gib']:.0f}" if ev.get("target_gib") else ""
+        print(f"\r    {D}{ev['rss_gib']:5.1f}{tgt} GiB in RAM{X}   ", end="", flush=True)
+        state["live"] = True
+    elif t == "drain":
+        if TTY:
+            print(f"\r    {D}{ev['left']} still answering ...{X}   ", end="", flush=True)
+            state["live"] = True
+    elif t == "done":
+        if state.get("live"):
+            print()
+        if ev["ok"]:
+            print(f"{G}ready{X} after {ev['total_s']:.0f} s")
+
+
+def do_switch(name, cancel=False, restart=False):
+    state = {}
+    try:
+        LC.switch(name, cancel_inflight=cancel, by="cli", restart=restart, on=lambda ev: show_switch(ev, state))
+    except LC.SwitchError as e:
+        print(f"\n{R}{e}{X}")
+        return False
+    except KeyboardInterrupt:
+        print(f"\n{Y}interrupted{X}; the hold at the gateway was released")
+        return False
+    return True
+
+
+def cmd_switch(args):
+    names = [a for a in args if not a.startswith("-")]
+    if not names:
+        sys.exit("usage: outcrop switch PRESET [--cancel]   (see outcrop list)")
+    name = names[0]
+    if name not in SP.names():
+        sys.exit(f"{R}unknown preset{X} {name!r}; presets: {', '.join(SP.names())}")
+    print(f"switching to {B}{name}{X} ...")
+    ok = do_switch(name, cancel="--cancel" in args)
+    if ok:
+        d = LC.default_preset()
+        print(f"{G}{name}{X} is serving at http://{(lan_addresses() or ['127.0.0.1'])[0]}:{public_port()}/v1"
+              + (f"  {D}(boot default stays {d}; `outcrop default {name}` to change it){X}" if d and d != name else ""))
+    sys.exit(0 if ok else 1)
+
+
+def cmd_default(args):
+    if not args:
+        print(LC.default_preset() or "none")
+        return
+    name = args[0]
+    try:
+        LC.set_default(name)
+    except ValueError as e:
+        sys.exit(f"{R}{e}{X}")
+    print(f"boot default: {B}{name}{X}" + ("" if any(n == name for n, _ in LC.running()) else
+                                           f"  {D}(`outcrop switch {name}` to run it now){X}"))
+
+
+def cmd_start(_):
+    if LC.running():
+        print(f"already running: {LC.running()[0][0]}")
+        return
+    d = LC.default_preset()
+    if not d:
+        sys.exit("no default preset: `outcrop default PRESET` first, or `outcrop switch PRESET`")
+    cmd_switch([d])
+
+
+def cmd_stop(_):
+    names = LC.stop_all()
+    print("stopped " + ", ".join(names) if names else "nothing is running")
+
+
+def cmd_restart(args):
+    n = LC.current()
+    if not n:
+        sys.exit("nothing is running: use outcrop start or outcrop switch PRESET")
+    print(f"restarting {B}{n}{X} ...")
+    sys.exit(0 if do_switch(n, cancel="--cancel" in args, restart=True) else 1)
+
+
+def cmd_boot_start(_):
+    """What outcrop-boot.service runs (as root): start the boot default."""
+    try:
+        name = LC.DEFAULT_FILE.read_text().strip()
+    except OSError:
+        print("no boot default set")
+        return
+    if not LC.NAME_RE.match(name) or name not in SP.names():
+        sys.exit(f"the boot default {name!r} is not a preset")
+    subprocess.run(["systemctl", "start", "--no-block", LC.UNIT.format(name)], check=True)
+    print(f"started {name}")
+
+
+def cmd_logs(args):
+    follow = "-f" in args
+    nums = [a for a in args if a.isdigit()]
+    n = nums[0] if nums else "60"
+    name = LC.current() or LC.default_preset()
+    if not name:
+        sys.exit("no preset has run yet")
+    log = SP.OUTCROP_HOME / "logs" / f"engine-{name}.log"
+    unit = LC.UNIT.format(name)
+    if follow:
+        os.execvp("bash", ["bash", "-c", f"journalctl -u {unit} -f -n {n} & tail -F -n {n} {log}; wait"])
+    print(f"{B}== journal: {unit}{X}")
+    run(["journalctl", "-u", unit, "-n", n, "--no-pager", "-q"])
+    print(f"{B}== engine log: {log}{X}")
+    run(["tail", "-n", n, str(log)])
+
+
+def bench_args():
+    k = local_token()
+    return ["--url", f"http://127.0.0.1:{public_port()}"] + (["--key", k] if k else [])
+
+
+def cmd_test(_):
+    sys.exit(subprocess.run([sys.executable, str(PROJECT / "bench" / "qualgate.py"), *bench_args()]).returncode)
+
+
+def cmd_bench(_):
+    sys.exit(subprocess.run([sys.executable, str(PROJECT / "bench" / "quickbench.py"), *bench_args(),
+                             "--repeat", "1", "--cases", "chat,code,story,doc4k"]).returncode)
+
+
+def cmd_profile(args):
+    sub = args[0] if args else "detect"
+    rest = args[1:]
+    cur = (PF.current() or {}).get("profile", {}).get("name")
+    if sub == "detect":
+        f = PF.facts()
+        gpus = ", ".join(f"{g['name']} ({g['vram_mib'] // 1024} GiB{', PCIe ' + g['pcie'] if g.get('pcie') else ''})" for g in f["gpus"])
+        print(f"{B}This machine{X}")
+        print(f"  GPU      {gpus or R + 'no NVIDIA GPU found (is the driver installed? nvidia-smi)' + X}")
+        print(f"  driver   {f['driver'] or '-'}")
+        print(f"  RAM      {f['ram_gib']} GiB")
+        print(f"  CPUs     {f['cpus']}")
+        print(f"  OS       {f['os'].get('PRETTY_NAME', '?')}")
+        print(f"  disk     {f['disk']['free_gb']} GB free for {f['disk']['path']}")
+        name, kind, why = PF.suggest(f)
+        print()
+        if name:
+            prof = PF.compose(name)["profile"]
+            mark = G + "fits" + X if kind == "exact" else Y + "probably fits" + X
+            print(f"{B}Profile:{X} {name} ({mark}): {prof.get('title', '')}")
+            for w in why:
+                print(f"  {Y}note:{X} {w}")
+            need = PF.disk_gb(PF.compose(name))
+            print(f"  needs about {need} GB of disk" + ("" if f["disk"]["free_gb"] >= need else f" {R}(only {f['disk']['free_gb']} GB free){X}"))
+        else:
+            print(f"{Y}No profile fits this machine yet.{X} The closest reasons:")
+            for w in why[:6]:
+                print(f"  - {w}")
+            print("  Profiles are files in profiles/; a new one for your hardware is welcome (CONTRIBUTING.md).")
+        if cur:
+            print(f"\n{D}presets.json now comes from profile {cur}{X}")
+        return
+    if sub == "list":
+        f = PF.facts()
+        for n in PF.names():
+            try:
+                prof = PF.compose(n)
+                kind, _ = PF.fit(prof, f)
+            except (KeyError, ValueError) as e:
+                print(f"  {R}broken  {X} {B}{n:<12}{X} {str(e).strip(chr(39))}")
+                continue
+            mark = {"exact": G + "fits    " + X, "similar": Y + "similar " + X}.get(kind, D + "        " + X)
+            here = " (in use)" if n == cur else ""
+            tested = "tested" if prof["profile"].get("tested") else "not tested yet"
+            print(f"  {mark} {B}{n:<12}{X} {prof['profile'].get('title', '')}{here}  {D}[{PF.disk_gb(prof)} GB, {tested}]{X}")
+        return
+    if sub in ("show", "diff", "apply") and not rest:
+        sys.exit(f"usage: outcrop profile {sub} NAME   (outcrop profile list shows the names)")
+    try:
+        prof = PF.usable(rest[0])
+    except (KeyError, ValueError) as e:
+        sys.exit(str(e).strip("'\""))
+    pp = prof["profile"]
+    if sub == "show":
+        print(f"{B}{rest[0]}{X}: {pp.get('title', '')}")
+        if pp.get("about"):
+            print(f"  {pp['about']}")
+        print(f"  packs     {', '.join(pp.get('packs', []))}  (about {PF.disk_gb(prof)} GB of disk)")
+        print(f"  presets   " + "\n            ".join(f"{k}{' (default)' if k == pp.get('default_preset') else ''}: {v.get('description', '')}"
+                                                     for k, v in prof["presets"].items()))
+        print(f"  tested    {pp.get('tested') or 'not yet'}")
+        for n in pp.get("notes", []):
+            print(f"  - {n}")
+        return
+    if sub == "diff":
+        print(PF.diff(rest[0]) or "presets.json already matches this profile")
+        return
+    if sub == "apply":
+        d = PF.diff(rest[0])
+        if not d and cur == rest[0]:
+            print("presets.json already matches this profile")
+            return
+        print(d or "(only the profile name changes)")
+        missing = [q for q in pp.get("packs", []) if not (SP.OUTCROP_HOME / "data" / "packs" / q).is_dir()]
+        if missing:
+            print(f"{Y}not downloaded yet:{X} {', '.join(missing)}  (./setup.sh, or setup/download-models.sh and setup/prep-packs.sh)")
+        if "--yes" not in rest and (not TTY or input(f"Write {PF.PRESETS_FILE} from profile {rest[0]}? [y/N] ").strip().lower() != "y"):
+            sys.exit("nothing changed")
+        if PF.PRESETS_FILE.exists() and PF.current() is None:
+            print(f"{Y}{PF.PRESETS_FILE} cannot be read as JSON: its server, gateway and console settings cannot be kept "
+                  f"(a copy of it is kept){X}")
+        path, backup = PF.apply(rest[0])
+        print(f"{G}wrote{X} {path}" + (f"  (the old one: {backup})" if backup else ""))
+        print(f"the profile's boot default is {pp.get('default_preset')}: `outcrop default {pp.get('default_preset')}` to use it; "
+              "`outcrop restart` applies changes to the running preset")
+        return
+    sys.exit(f"unknown: outcrop profile {sub}\n" + __doc__)
+
+
+CMDS = {"status": cmd_status, "list": cmd_list, "switch": cmd_switch, "use": cmd_switch, "default": cmd_default,
+        "start": cmd_start, "stop": cmd_stop, "restart": cmd_restart, "logs": cmd_logs, "log": cmd_logs, "test": cmd_test,
+        "bench": cmd_bench, "connect": cmd_connect, "presets": cmd_list, "boot-start": cmd_boot_start,
+        "profile": cmd_profile, "profiles": cmd_profile}
+OUTCROP = {"token", "tokens", "auth", "gateway", "audit", "console", "alerts", "desktop", "schedule"}
+
+if __name__ == "__main__":
+    a = sys.argv[1:] or ["status"]
+    if a[0] in ("-h", "--help", "help"):
+        print(__doc__)
+        sys.exit(0)
+    if a[0] in OUTCROP:
+        outcrop_cli(["token" if a[0] == "tokens" else a[0], *a[1:]])
+    if a[0] not in CMDS:
+        sys.exit(f"unknown command {a[0]!r}\n{__doc__}")
+    CMDS[a[0]](a[1:])

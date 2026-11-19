@@ -1,0 +1,6 @@
+#!/bin/sh
+# outcrop-gateway: the API gateway on ports 8080 and 11434 (console/outcrop/gateway), run with the console's Python.
+PROJECT=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+VENV=${OUTCROP_VENV:-${OUTCROP_HOME:-$HOME/.outcrop}/venv/outcrop}
+export PYTHONPATH="$PROJECT/console${PYTHONPATH:+:$PYTHONPATH}"
+exec "$VENV/bin/python" -m outcrop.gateway "$@"

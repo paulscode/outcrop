@@ -1,0 +1,72 @@
+# The chat's page fetcher (docs/SECURITY.md, "Web access for the chat"): opens one public page for the open_page tool and returns its
+# text, over the Unix socket /run/outcrop-fetch/fetch.sock (group outcrop-fetch: the console's user is in it).
+# Its own user, no access to your files, and the KERNEL refuses its connections to this server and your network
+# (IPAddressDeny below, with only the local DNS resolver allowed): a bug in the fetcher, or a site whose name suddenly
+# points at 192.168.x.x, still cannot reach the router, the gateway or the console.  Pages are parsed in child processes
+# (multiprocessing forkserver, in the private /tmp) with their own CPU and memory limits.  It checks this itself at start
+# (GET /health -> isolated) and opens nothing if the rule is missing.
+[Unit]
+Description=LLM chat page fetcher (sandboxed, public internet only)
+Documentation=file://@PROJECT@/docs/SECURITY.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=outcrop-fetch
+Group=outcrop-fetch
+WorkingDirectory=/opt/outcrop-fetch/app
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=HOME=/nonexistent
+# the LAN's gateway, for the start-up check that the kernel stops connections to it
+Environment=OUTCROP_FETCH_PROBE=@LAN_GATEWAY@
+# the home's public IPv4, looked up through this "IP echo" service at start and every 6 hours, so the fetcher refuses it
+# (a router's admin page, port forwards back here).  Best effort; the service sees the home's IP.  Empty turns it off.
+Environment=OUTCROP_FETCH_WAN_ECHO=https://api.ipify.org
+ExecStart=/opt/outcrop-fetch/venv/bin/python -I -m outcrop.fetcher --socket /run/outcrop-fetch/fetch.sock
+Restart=always
+RestartSec=3
+RuntimeDirectory=outcrop-fetch
+RuntimeDirectoryMode=0750
+UMask=0007
+MemoryMax=768M
+TasksMax=64
+CPUQuota=200%
+# the kernel's rule: nothing on this machine or the LAN, except DNS to systemd-resolved's stub.  (::/96 holds the old
+# IPv4-compatible addresses, 64:ff9b::/96 and 64:ff9b:1::/48 NAT64.)  This machine's own public addresses, if it ever
+# has any, and the home's public IPv4 change, so the code refuses those (fetch.own_addresses, and the WAN lookup).
+IPAddressAllow=127.0.0.53/32
+IPAddressDeny=localhost link-local fe80::/10 multicast 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 172.16.0.0/12 192.0.0.0/24 192.168.0.0/16 198.18.0.0/15 240.0.0.0/4 ::/96 ::ffff:0:0/96 64:ff9b::/96 64:ff9b:1::/48 fc00::/7 fec0::/10
+CapabilityBoundingSet=
+AmbientCapabilities=
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateUsers=yes
+ProtectProc=invisible
+ProcSubset=pid
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+# AF_NETLINK: getifaddrs, to know this machine's own addresses (read-only without capabilities)
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+# the page parser lowers its own limits (CPU time, memory): lowering needs no privilege
+SystemCallFilter=setrlimit prlimit64
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

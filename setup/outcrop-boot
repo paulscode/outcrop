@@ -1,0 +1,19 @@
+#!/bin/sh
+# Installed as /usr/local/libexec/outcrop-boot (root-owned) and run by outcrop-boot.service: start the preset named in
+# $OUTCROP_HOME/state/default_preset.  The name is checked before it goes into a unit name.
+set -eu
+f="${OUTCROP_HOME:?}/state/default_preset"
+[ -r "$f" ] || { echo "no boot default ($f)"; exit 0; }
+p=$(head -c 64 "$f" | tr -d '[:space:]')
+case "$p" in
+  ""|*[!a-z0-9-]*) echo "the boot default '$p' is not a preset name"; exit 0 ;;
+esac
+# a preset renamed or removed since: say so instead of starting a unit that fails over and over
+if [ -r "$OUTCROP_HOME/presets.json" ]; then
+  if ! python3 -c 'import json, sys; sys.exit(0 if sys.argv[2] in json.load(open(sys.argv[1]))["presets"] else 1)' \
+       "$OUTCROP_HOME/presets.json" "$p"; then
+    echo "the boot default '$p' is not in presets.json: nothing started (outcrop default PRESET sets another)"
+    exit 0
+  fi
+fi
+exec systemctl start --no-block "outcrop-engine@$p.service"

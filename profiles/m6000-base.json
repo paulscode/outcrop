@@ -1,0 +1,48 @@
+{
+  "profile": {
+    "name": "m6000-base",
+    "abstract": true,
+    "title": "Quadro M6000 24 GB (Maxwell, sm_52): what every RAM size shares",
+    "about": "The engine switches below are the ones measured fastest on Maxwell (Q8 dense and MTP kernels, f32 dense, expert mode 8). The RAM-size profiles extend this one."
+  },
+  "server": {
+    "host": "127.0.0.1",
+    "port": 18080,
+    "api_key": "none",
+    "model_id": "qwen3.8-flash-next"
+  },
+  "gateway": {
+    "enabled": true,
+    "listen": "::",
+    "port": 8080,
+    "ollama_port": 11434,
+    "https_port": 8443,
+    "bridge_port": 11435,
+    "hold_max_s": 120,
+    "body_max_mib": 64,
+    "hosts": []
+  },
+  "console": {
+    "port": 443,
+    "http_port": 80
+  },
+  "engine": "strata-0211",
+  "common": {
+    "env": {
+      "STRATA_Q8_SM60": "1",
+      "STRATA_EXP_MODE": "8",
+      "STRATA_MTP_Q8_SM60": "1",
+      "STRATA_DENSE_F32": "1",
+      "STRATA_NO_ARENA_THP": "1"
+    },
+    "args": [
+      "--adapt-async 1"
+    ],
+    "vision": "cpu",
+    "vision_cfg": {
+      "max_tokens": 300,
+      "threads": 16
+    }
+  },
+  "presets": {}
+}

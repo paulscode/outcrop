@@ -1,0 +1,118 @@
+{
+ "chat": [
+  {
+   "prompt_n": 53,
+   "prompt_tps": 53.2,
+   "decode_n": 256,
+   "decode_tps": 43.7,
+   "ttft_s": 1.064199318999954,
+   "total_s": 6.879052890999901,
+   "text": "A hash table finds a value by using a **hash function** to map a key to an index in an array (often called a \"bucket\"). Here is the step-by-step process, including how collisions are handled.\n\n### 1. The Basic Process\n\n1. **Hash the Key**: The hash function takes the key (e.g., `\"apple\"`) and converts it into an integer (e.g., `42`).\n2. **Map to Index**: That integer is used to determine which slot in the array to look at. Usually, this is done by taking the modulo of the array size: `index = hash(key) % array_size`.\n3. **Look Up**: The table checks the slot at that index. If the key matches, it returns the associated value.\n\n### 2. Handling Collisions\n\nA **collision** occurs when two different keys hash to the same index. For example, if `\"apple\"` and `\"banana\"` both hash to index `5`, they collide.\n\nThere are two common ways to handle this:\n\n#### A. Chaining (Linked Lists)\nEach bucket holds a linked list of entries. If a collision occurs, the new entry is added to the list in that bucket.\n-"
+  },
+  {
+   "prompt_n": 53,
+   "prompt_tps": 52.4,
+   "decode_n": 256,
+   "decode_tps": 43.2,
+   "ttft_s": 1.0550102830000014,
+   "total_s": 6.942248500000005,
+   "text": "A hash table finds a value by using a **hash function** to map a key to a specific index (or \"bucket\") in an array. Here is the step-by-step process, including how collisions are handled.\n\n### 1. The Basic Process\n\n1. **Hash the Key**: The hash function takes the key (e.g., `\"apple\"`) and converts it into an integer (e.g., `42`).\n2. **Map to Index**: That integer is used to determine which slot in the array to look at. Usually, this is done by taking the modulo of the array size: `index = hash(key) % array_size`.\n3. **Retrieve the Value**: Look at the slot at that index. If the key matches, return the associated value.\n\n### 2. Handling Collisions\n\nA **collision** occurs when two different keys hash to the same index. For example, if `\"apple\"` and `\"banana\"` both hash to index `5`, they collide.\n\nThere are two common ways to handle collisions:\n\n#### A. Chaining (Linked Lists)\nEach bucket in the array holds a linked list of key-value pairs.\n- If `\"apple\"` and `\"banana\"` both hash to index `"
+  },
+  {
+   "prompt_n": 53,
+   "prompt_tps": 50.7,
+   "decode_n": 256,
+   "decode_tps": 42.2,
+   "ttft_s": 1.0897644330000276,
+   "total_s": 7.116038414000059,
+   "text": "To explain how a hash table finds a value, we need to understand the core concept: **mapping a key to a specific location in memory using a mathematical function.**\n\nHere is the step-by-step process, including how collisions are handled, followed by a small example.\n\n### 1. The Core Mechanism\n\nA hash table consists of an array (often called a \"bucket array\") and a **hash function**.\n\n1.  **Hashing the Key:** The hash function takes the key (e.g., `\"apple\"`) and converts it into an integer index (e.g., `3`).\n2.  **Direct Access:** The table looks at the array index `3`.\n3.  **Retrieval:** If the value stored at index `3` matches the key, the value is returned.\n\n### 2. Handling Collisions\n\nA **collision** occurs when two different keys hash to the same index. For example, if `\"apple\"` and `\"banana\"` both hash to index `3`, they collide.\n\nThere are two common strategies to handle collisions:\n\n#### A. Chaining (Linked Lists)\nEach bucket in the array holds a linked list of entries. If a collision occurs, the new entry is added"
+  }
+ ],
+ "code": [
+  {
+   "prompt_n": 68,
+   "prompt_tps": 53.3,
+   "decode_n": 256,
+   "decode_tps": 49.2,
+   "ttft_s": 1.3186152569999194,
+   "total_s": 6.479628955999942,
+   "text": "```python\nfrom typing import Optional\n\n\nclass Node:\n    \"\"\"A node in the doubly linked list.\"\"\"\n    def __init__(self, key: int, value: int):\n        self.key = key\n        self.value = value\n        self.prev: Optional[Node] = None\n        self.next: Optional[Node] = None\n\n\nclass LRUCache:\n    \"\"\"\n    LRU Cache using a dict and a doubly linked list.\n    \n    The doubly linked list maintains the order of access:\n    - Most recently used items are at the head.\n    - Least recently used items are at the tail.\n    \"\"\"\n\n    def __init__(self, capacity: int):\n        self.capacity = capacity\n        self.cache: dict[int, Node] = {}\n        # Dummy head and tail nodes to simplify edge cases\n        self.head = Node(0, 0)\n        self.tail = Node(0, 0)\n        self.head.next = self.tail\n        self.tail.prev = self.head\n\n    def _remove(self, node: Node) -> None:\n        \"\"\"Remove a node from the doubly linked list.\"\"\"\n        prev = node.prev\n        nxt = node.next\n"
+  },
+  {
+   "prompt_n": 68,
+   "prompt_tps": 52.9,
+   "decode_n": 256,
+   "decode_tps": 48.4,
+   "ttft_s": 1.3283135379999749,
+   "total_s": 6.580414282999982,
+   "text": "```python\nfrom typing import Optional\n\n\nclass Node:\n    \"\"\"A node in the doubly linked list.\"\"\"\n    def __init__(self, key: int, value: int):\n        self.key = key\n        self.value = value\n        self.prev: Optional[Node] = None\n        self.next: Optional[Node] = None\n\n\nclass LRUCache:\n    \"\"\"\n    LRU Cache using a dict and a doubly linked list.\n    \n    The doubly linked list maintains the order of access:\n    - Most recently used items are at the head.\n    - Least recently used items are at the tail.\n    \"\"\"\n\n    def __init__(self, capacity: int):\n        self.capacity = capacity\n        self.cache: dict[int, Node] = {}\n        # Sentinel nodes to simplify edge cases\n        self.head = Node(0, 0)  # dummy head\n        self.tail = Node(0, 0)  # dummy tail\n        self.head.next = self.tail\n        self.tail.prev = self.head\n\n    def _remove(self, node: Node) -> None:\n        \"\"\"Remove a node from the doubly linked list.\"\"\"\n        prev = node.prev\n       "
+  },
+  {
+   "prompt_n": 68,
+   "prompt_tps": 53.0,
+   "decode_n": 256,
+   "decode_tps": 48.9,
+   "ttft_s": 1.328823095000189,
+   "total_s": 6.527321416000177,
+   "text": "```python\nfrom typing import Optional\n\n\nclass Node:\n    \"\"\"A node in the doubly linked list.\"\"\"\n    def __init__(self, key: int, value: int):\n        self.key = key\n        self.value = value\n        self.prev: Optional[Node] = None\n        self.next: Optional[Node] = None\n\n\nclass LRUCache:\n    \"\"\"\n    LRU Cache using a dict and a doubly linked list.\n    \n    The doubly linked list maintains the order of access:\n    - Most recently used items are at the head.\n    - Least recently used items are at the tail.\n    \"\"\"\n\n    def __init__(self, capacity: int):\n        self.capacity = capacity\n        self.cache: dict[int, Node] = {}\n        # Sentinel nodes to simplify edge cases\n        self.head = Node(0, 0)  # dummy head\n        self.tail = Node(0, 0)  # dummy tail\n        self.head.next = self.tail\n        self.tail.prev = self.head\n\n    def _remove(self, node: Node) -> None:\n        \"\"\"Remove a node from the doubly linked list.\"\"\"\n        prev = node.prev\n       "
+  }
+ ],
+ "story": [
+  {
+   "prompt_n": 53,
+   "prompt_tps": 51.3,
+   "decode_n": 256,
+   "decode_tps": 34.9,
+   "ttft_s": 1.0759734240000398,
+   "total_s": 8.368649915000105,
+   "text": "The wind off the North Sea was a howling beast that night, rattling the glass panes of the lighthouse tower. Elias, a keeper who had spent thirty years listening to the rhythm of the waves, sat in his small kitchen, nursing a cup of tea and watching the beam sweep across the dark water.\n\nIt was a routine night, until something caught his eye.\n\nA small, dark object bobbed in the choppy water just below the rocky outcrop where the lighthouse stood. It wasn\u2019t debris; it was too deliberate. Elias grabbed his coat and descended the spiral stairs, stepping out into the biting cold. He waded into the shallows, his boots sinking into the mud, and reached out.\n\nThe bottle was green glass, sealed with a cork that had long since rotted away. Inside, wrapped in a piece of cloth that had survived the salt and time, was a note.\n\nElias brought it back to the warmth of the tower. He carefully unfolded the cloth. The paper was brittle, the ink faded but still legible. It was dated 1923.\n\n*To whoever finds this,*\n\n*My name is Arthur. I was a sailor on the ship 'The Gilded Dawn.' We"
+  },
+  {
+   "prompt_n": 53,
+   "prompt_tps": 51.0,
+   "decode_n": 256,
+   "decode_tps": 32.1,
+   "ttft_s": 1.0824019330000283,
+   "total_s": 9.02095936700016,
+   "text": "The wind off the North Sea was a constant companion to Elias, a man whose life had been measured in rotations of a lens and the rhythmic crash of waves against the granite base of the lighthouse. For thirty years, Elias had tended the beacon, a solitary figure who spoke more to the sea than to people.\n\nOne Tuesday, during a particularly violent storm, the tide receded further than usual, exposing a stretch of jagged rocks usually submerged. Elias, checking the foundation for damage, noticed something wedged in the crevice of the stone. It was a glass bottle, darkened by age and salt, its cork rotted away.\n\nHe picked it up. The glass was thick, old-fashioned, and heavy. Inside, rolled tightly, was a piece of parchment. Elias carefully extracted it, his fingers trembling slightly from the cold. The ink was faded, but legible.\n\n*To whoever finds this,*\n\n*My name is Clara. I was a sailor on the ship 'The Gilded Rose,' which sank off this coast in 1923. I survived the wreck, but not the cold. I am writing this from the lifeboat, drifting, alone. If you are reading this, I am already gone. But I"
+  },
+  {
+   "prompt_n": 53,
+   "prompt_tps": 50.8,
+   "decode_n": 256,
+   "decode_tps": 33.0,
+   "ttft_s": 1.0874252049998177,
+   "total_s": 8.797077101999776,
+   "text": "The wind off the North Sea was a constant companion to Elias, a man whose life had been measured in rotations of a lens and the rhythmic crash of waves against the granite base of the lighthouse. For thirty years, Elias had tended the beacon, a solitary figure who spoke more to the sea than to people.\n\nOne Tuesday, during a particularly violent storm, the tide surged higher than usual. Elias, accustomed to checking the perimeter for debris, noticed something odd near the rocky outcrop below the tower. It wasn\u2019t driftwood or seaweed, but a small, glass object half-buried in the sand.\n\nHe descended the steep path, his boots slipping on the wet stone. When he reached the object, he saw it was a bottle, sealed with wax and cork. The glass was thick, old-fashioned, and clouded with age. Inside, a rolled piece of parchment lay against the bottom.\n\nElias carefully retrieved the bottle. He carried it back to the lighthouse, where the warmth of the stove and the smell of dried herbs filled the small kitchen. He broke the seal with a knife, unrolled the paper, and read the faded ink.\n\n*To whoever finds this,*\n\n*My name is Clara. I was a"
+  }
+ ],
+ "doc4k": [
+  {
+   "prompt_n": 4067,
+   "prompt_tps": 199.6,
+   "decode_n": 256,
+   "decode_tps": 42.4,
+   "ttft_s": 20.421575947000065,
+   "total_s": 26.41570018399989,
+   "text": "Based on the provided data, here is a summary of the structure and instructions for looking up a record.\n\n### 1. Structure of the Records\n\nEach record follows a consistent, repetitive pattern consisting of two parts:\n\n*   **Record ID:** A unique identifier formatted as `record` followed by a 6-digit number (e.g., `record000001`).\n*   **Content:** A fixed sequence of eight Greek letters separated by spaces:\n    `alpha beta gamma delta epsilon zeta eta theta`\n\n**Example:**\n```text\nrecord000001: alpha beta gamma delta epsilon zeta eta theta.\n```\n\n### 2. How to Look Up a Record by ID\n\nTo find a specific record, you can use the following steps:\n\n1.  **Identify the Target ID:** Determine the record number you are looking for (e.g., record 50).\n2.  **Format the ID:** Ensure the ID follows the format `record` + `6-digit number`. For example, record 50 becomes `record000050`.\n3.  **Search the Text:** Locate the line that starts with that exact ID.\n\n**Example Lookup"
+  },
+  {
+   "prompt_n": 4067,
+   "prompt_tps": 199.0,
+   "decode_n": 256,
+   "decode_tps": 42.4,
+   "ttft_s": 20.482202104999942,
+   "total_s": 26.48809875400002,
+   "text": "Based on the provided data, here is a summary of the structure and instructions for looking up a record.\n\n### 1. Structure of the Records\n\nEach record follows a consistent, simple format consisting of two parts separated by a colon:\n\n*   **Record ID:** A unique identifier in the format `recordXXXXXX`, where `XXXXXX` is a zero-padded integer (e.g., `record000001`, `record000211`).\n*   **Record Content:** A fixed sequence of eight Greek letters: `alpha beta gamma delta epsilon zeta eta theta`.\n\n**Example:**\n```text\nrecord000001: alpha beta gamma delta epsilon zeta eta theta.\n```\n\n### 2. How to Look Up a Record by ID\n\nTo find a specific record, you can use the following methods depending on your environment:\n\n#### A. Manual Inspection (Text Search)\n1.  Identify the target ID (e.g., `record000150`).\n2.  Search the text for the exact string `record000150`.\n3.  The line immediately following the ID contains the data.\n\n#### B. Programmatic Lookup"
+  },
+  {
+   "prompt_n": 4067,
+   "prompt_tps": 197.8,
+   "decode_n": 256,
+   "decode_tps": 41.8,
+   "ttft_s": 20.612023646999887,
+   "total_s": 26.70206716299981,
+   "text": "Based on the provided data, here is a summary of the structure and instructions for looking up a record.\n\n### 1. Structure of the Records\n\nEach record follows a consistent, simple format consisting of two parts separated by a colon:\n\n*   **Record ID:** A unique identifier in the format `recordXXXXXX`, where `XXXXXX` is a zero-padded integer (e.g., `record000001`, `record000211`).\n*   **Record Content:** A fixed sequence of eight Greek letters: `alpha beta gamma delta epsilon zeta eta theta`.\n\n**Example:**\n```text\nrecord000001: alpha beta gamma delta epsilon zeta eta theta.\n```\n\n### 2. How to Look Up a Record by ID\n\nTo find a specific record, you can use the following methods depending on your environment:\n\n#### A. Manual Inspection (Text Search)\n1.  Identify the target ID (e.g., `record000150`).\n2.  Search the text for the exact string `record000150`.\n3.  The line immediately following the ID contains the data.\n\n#### B. Programmatic Lookup"
+  }
+ ]
+}

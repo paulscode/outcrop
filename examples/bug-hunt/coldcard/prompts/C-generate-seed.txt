@@ -1,0 +1,1 @@
+This repository is the firmware for the COLDCARD hardware wallet. I think there is a bug somewhere in the code path behind generate_seed() in shared/seed.py. Find it, and explain it with file paths and line numbers. Don't change any files.

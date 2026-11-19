@@ -1,0 +1,45 @@
+# dsh settings for running the strategy by hand, in dsh's browser UI:
+#   cd YOUR-REPO && GATEWAY_API_KEY=$(cat ~/.config/outcrop/bug-hunt-token) dsh web --patch PATH/TO/interactive.patch.yml
+# The same as dsh.patch.yml, but the model is your server's gateway by its address. Set baseURL below to your server
+# (localhost when dsh runs on the server itself).
+
+- id: llm-pi-ai
+  config:
+    providers:
+      outcrop:
+        apiKeyEnv: GATEWAY_API_KEY
+        api: openai-completions
+        baseURL: http://localhost:8080/v1          # your Outcrop installation's gateway, e.g. http://myserver.local:8080/v1
+        compat:
+          supportsDeveloperRole: false
+          maxTokensField: max_tokens
+        streamIdleTimeoutMs: 1800000
+        models:
+          - id: qwen3.8-flash-next
+            contextWindow: 262144
+            maxTokens: 32768
+
+- id: agent-default-model
+  config:
+    provider: outcrop
+    model: qwen3.8-flash-next
+
+- id: subagent
+  config:
+    maxActiveSubagents: 1
+
+- id: tool-web
+  disabled: true
+- id: web
+  disabled: true
+- id: web-search-deepseek
+  disabled: true
+- id: web-deepseek-api
+  disabled: true
+- id: web-fetch-http
+  disabled: true
+
+- id: session-log-deepseek
+  disabled: true
+- id: session-telemetry-otel
+  disabled: true

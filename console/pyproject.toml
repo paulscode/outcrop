@@ -1,0 +1,59 @@
+[project]
+name = "outcrop"
+version = "0.1.0"
+description = "Outcrop: the API gateway and web console of a simple framework for running a capable LLM on budget, upgradable hardware"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    "uvicorn>=0.32",
+    "uvloop>=0.21",
+    "httptools>=0.6",
+    "httpx>=0.28",
+    "fastapi>=0.115",
+    "websockets>=14",
+    "argon2-cffi>=23.1",
+    "zxcvbn>=4.5",
+    "cryptography>=44",
+    "nvidia-ml-py>=12.560",
+    "psutil>=6.1",
+    "zstandard>=0.23",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "openai>=1.60",
+    "anthropic>=0.45",
+    "ollama>=0.4",
+    "ruff>=0.8",
+    "pip-audit>=2.7",
+    {include-group = "fetch"},
+]
+# The page fetcher (outcrop-fetch.service) installs only this group, into its own environment.  Upper bounds keep every
+# package at a release at least two weeks old (2026-11-07), except where a newer patch release fixes known
+# vulnerabilities (pypdf 6.21.4: seven CVEs, and pypdf reads PDFs from the internet); raise them as those age.
+fetch = [
+    "anyio>=4.6",
+    "httpcore>=1.0",
+    "idna>=3.7",          # host names as browsers encode them (UTS 46); named, not only pulled in by anyio
+    "pypdf>=6.21.4,<6.22",
+    "trafilatura>=2.0,<2.4",
+    "uvicorn>=0.32",
+    "regex<2026.11",
+    "dateparser<1.5",
+    "python-dateutil<4",
+    "lxml-html-clean<0.4.6",
+    "pytz<2026.6",
+    "tzdata<2026.6",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 130
+target-version = "py312"

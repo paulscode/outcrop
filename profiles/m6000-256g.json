@@ -1,0 +1,81 @@
+{
+  "profile": {
+    "name": "m6000-256g",
+    "extends": "m6000-base",
+    "title": "Quadro M6000 24 GB with 192 GB of RAM or more (the reference system)",
+    "match": {
+      "gpus": [
+        "Quadro M6000 24GB"
+      ],
+      "similar_gpus": [
+        "Tesla M40 24GB"
+      ],
+      "vram_mib_min": 23000,
+      "ram_gib": [
+        192,
+        100000
+      ]
+    },
+    "packs": [
+      "q2_0",
+      "iq3_xxs",
+      "iq3_s"
+    ],
+    "default_preset": "quality",
+    "tested": "2026-11-06 to 2026-11-18 on the reference system: EPYC, 236 GiB of RAM, PCIe Gen3 x16 (docs/FINDINGS.md)",
+    "notes": [
+      "The reference system. A 48 GiB conversation cache keeps 16 parked conversations, so agents that switch between several get their prompts back without re-reading them."
+    ]
+  },
+  "common": {
+    "args": [
+      "--adapt-async 1",
+      "--conversation-cache-mib 49152",
+      "--conversation-cache-slots 16"
+    ]
+  },
+  "presets": {
+    "speed": {
+      "description": "Q2_0 pack, 2.4 bits/weight: the fastest; task average 89.1 against the original's 93.1",
+      "pack": "q2_0",
+      "context": 262144
+    },
+    "balanced": {
+      "description": "IQ3_XXS pack, 3.0 bits/weight: task average 92.6",
+      "pack": "iq3_xxs",
+      "context": 262144
+    },
+    "quality": {
+      "description": "IQ3_S pack, 3.5 bits/weight: task average 93.3, level with the original model",
+      "pack": "iq3_s",
+      "context": 262144
+    },
+    "speed-1m": {
+      "description": "speed with a 1,048,576-token context (YaRN x4; slightly changes answers at every length)",
+      "pack": "q2_0",
+      "context": 1048576,
+      "rope": {
+        "scaling": "yarn",
+        "scale": 4
+      }
+    },
+    "balanced-1m": {
+      "description": "balanced with a 1,048,576-token context (YaRN x4)",
+      "pack": "iq3_xxs",
+      "context": 1048576,
+      "rope": {
+        "scaling": "yarn",
+        "scale": 4
+      }
+    },
+    "quality-1m": {
+      "description": "quality with a 1,048,576-token context (YaRN x4)",
+      "pack": "iq3_s",
+      "context": 1048576,
+      "rope": {
+        "scaling": "yarn",
+        "scale": 4
+      }
+    }
+  }
+}

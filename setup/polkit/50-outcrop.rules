@@ -1,0 +1,17 @@
+// Installed as /etc/polkit-1/rules.d/50-outcrop.rules by setup/install-console.sh.
+// Lets @USER@ start, stop and restart the LLM units, and nothing else, without a password: outcrop and the console use this
+// instead of sudo (the console runs with NoNewPrivileges, so sudo could not work there anyway).
+polkit.addRule(function (action, subject) {
+    if (action.id !== "org.freedesktop.systemd1.manage-units" || subject.user !== "@USER@") {
+        return polkit.Result.NOT_HANDLED;
+    }
+    var unit = action.lookup("unit") || "";
+    var verb = action.lookup("verb") || "";
+    var units = ["outcrop-boot.service", "outcrop-gateway.service", "outcrop-console.service", "outcrop-ollama-bridge.service",
+                 "outcrop-fetch.service", "outcrop-searxng.service"];
+    var ok = /^outcrop-engine@[a-z0-9][a-z0-9-]{0,40}\.service$/.test(unit) || units.indexOf(unit) >= 0;
+    if (ok && ["start", "stop", "restart", "try-restart", "reload-or-restart", "reset-failed"].indexOf(verb) >= 0) {
+        return polkit.Result.YES;
+    }
+    return polkit.Result.NOT_HANDLED;
+});

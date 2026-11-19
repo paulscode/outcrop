@@ -1,0 +1,5 @@
+{"base": "speed", "cases": "chat,code,story,doc4k", "repeat": 3, "tokens": 256, "rounds": 2,
+ "arms": [
+  {"name": "pin-128k",  "engine": "strata-pin",  "context": 131072, "env": {"STRATA_DECODE_TIMING": "1"}},
+  {"name": "0211-128k", "engine": "strata-0211", "context": 131072, "env": {"STRATA_DECODE_TIMING": "1"}}
+ ]}

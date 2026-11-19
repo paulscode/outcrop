@@ -1,0 +1,15 @@
+# Starts the boot-default preset: the name in @OUTCROP_HOME@/state/default_preset (`outcrop default PRESET`), so setting the default
+# needs no unit-file change.  The outcrop-engine@ instances themselves are not enabled.
+[Unit]
+Description=Start the boot-default LLM preset (outcrop default)
+After=network-online.target nvidia-persistenced.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=OUTCROP_HOME=@OUTCROP_HOME@
+ExecStart=/usr/local/libexec/outcrop-boot
+
+[Install]
+WantedBy=multi-user.target

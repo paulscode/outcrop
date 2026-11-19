@@ -1,0 +1,6 @@
+#!/bin/sh
+# outcrop-console: the web console on HTTPS (console/outcrop/console), run with the console's Python.
+PROJECT=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+VENV=${OUTCROP_VENV:-${OUTCROP_HOME:-$HOME/.outcrop}/venv/outcrop}
+export PYTHONPATH="$PROJECT/console${PYTHONPATH:+:$PYTHONPATH}"
+exec "$VENV/bin/python" -m outcrop.console "$@"

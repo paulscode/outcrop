@@ -1,0 +1,5 @@
+{"base": "speed", "cases": "chat,code", "repeat": 1, "tokens": 128, "rounds": 1,
+ "arms": [
+  {"name": "plain-q2", "engine": "strata-0211", "context": 32768, "q8_dense": false,
+   "env": {"STRATA_Q8_SM60": null, "STRATA_DECODE_TIMING": "1"}}
+ ]}

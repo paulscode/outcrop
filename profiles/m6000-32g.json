@@ -1,0 +1,51 @@
+{
+  "profile": {
+    "name": "m6000-32g",
+    "extends": "m6000-base",
+    "title": "Quadro M6000 24 GB with 32 GB of RAM",
+    "match": {
+      "gpus": [
+        "Quadro M6000 24GB"
+      ],
+      "similar_gpus": [
+        "Tesla M40 24GB"
+      ],
+      "vram_mib_min": 23000,
+      "ram_gib": [
+        24,
+        48
+      ]
+    },
+    "packs": [
+      "q2_0",
+      "iq3_xxs"
+    ],
+    "default_preset": "speed",
+    "tested": "2026-11-18 on a VM with 16 EPYC 7742 threads, 31 GiB of RAM and the M6000 at PCIe Gen3 x8: speed 40.1 / 43.9 / 31.2 / 40.0 tok/s (chat / code / story / 4K doc), prompts 199 tok/s; balanced 32.4 / 33.6 / 25.3 / 29.1 tok/s, prompts 170 tok/s; both in low-RAM mode, answer checks passed",
+    "notes": [
+      "IQ3_S (quality) needs about 57 GiB of free RAM and is not offered.",
+      "The packs do not fit in RAM: the engine keeps the most used experts in RAM and reads the rest from disk (low-RAM mode), so a fast SSD matters.",
+      "Keep other programs light: with IQ3_XXS every GiB they take slows answers down; Q2_0 holds its speed.",
+      "A switch takes about 10 minutes: the packs do not stay in the page cache, so each start reads the pack from disk."
+    ]
+  },
+  "common": {
+    "args": [
+      "--adapt-async 1",
+      "--conversation-cache-mib 4096",
+      "--conversation-cache-slots 2"
+    ]
+  },
+  "presets": {
+    "speed": {
+      "description": "Q2_0 pack, 2.4 bits/weight: the fastest, and the best choice with 32 GB of RAM; task average 89.1",
+      "pack": "q2_0",
+      "context": 262144
+    },
+    "balanced": {
+      "description": "IQ3_XXS pack, 3.0 bits/weight: task average 92.6; with 32 GB it slows down as other programs use RAM",
+      "pack": "iq3_xxs",
+      "context": 262144
+    }
+  }
+}

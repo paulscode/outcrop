@@ -1,0 +1,461 @@
+#!/usr/bin/env python3
+"""outcrop-ollama-bridge [--auto | --listen 0.0.0.0 --port 11434 --upstream http://127.0.0.1:8080]
+
+Serves Ollama's API on its usual port and answers it from the Strata server's OpenAI API, for apps that speak only Ollama
+(Home Assistant's Ollama integration, Obsidian plugins, Enchanted, Raycast, ...).  Python standard library only.
+
+  GET  /  /api/version  /api/tags  /api/ps        POST /api/show  /api/chat  /api/generate
+  /v1/*  passed through to the Strata server unchanged (Ollama serves an OpenAI API there too)
+
+Not available: embeddings, and pulling, creating, copying or deleting models (one model is served, chosen with outcrop).
+
+--auto (what the service runs) takes the addresses from presets.json: behind the API gateway the bridge listens on
+127.0.0.1:11435 and the gateway owns port 11434; during `outcrop gateway bypass`, or without the gateway, it listens on the
+LAN at 11434 itself.  Each client's own Authorization header is passed on to Strata.
+"""
+import argparse
+import base64
+import hashlib
+import http.client
+import json
+import select
+import socket
+import socketserver
+import sys
+import time
+import urllib.parse
+from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+ap = argparse.ArgumentParser()
+ap.add_argument("--auto", action="store_true", help="addresses from presets.json and the gateway's state")
+ap.add_argument("--listen", default="0.0.0.0")
+ap.add_argument("--port", type=int, default=11434)
+ap.add_argument("--upstream", default="http://127.0.0.1:8080")
+ap.add_argument("--api-key", default="", help="sent to the upstream server, if it requires one")
+A = ap.parse_args()
+if A.auto:
+    sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent / "lib"))
+    import strata_presets as SP
+    _cfg = SP.load()
+    _host, _port = SP.bind(_cfg)
+    _g = _cfg.get("gateway", {})
+    A.upstream = f"http://127.0.0.1:{_port}"
+    if SP.gateway_mode(_cfg):
+        A.listen, A.port = "127.0.0.1", int(_g.get("bridge_port", 11435))
+    else:
+        A.listen, A.port = str(_g.get("bypass_listen", "0.0.0.0")), int(_g.get("ollama_port", 11434))
+UP = urllib.parse.urlparse(A.upstream)
+VERSION = "0.13.0"
+
+
+def now_iso():
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+
+
+def upstream(method, path, body=None, timeout=3600, auth=None):
+    """`auth`: the client's own Authorization / x-api-key headers, passed on, so a server with an API key stays closed through
+    the bridge (Ollama clients can send headers); --api-key is used only when the client sends none."""
+    c = http.client.HTTPConnection(UP.hostname, UP.port or 80, timeout=timeout)
+    h = {"Content-Type": "application/json", **(auth or {})}
+    if A.api_key and not auth:
+        h["Authorization"] = f"Bearer {A.api_key}"
+    c.request(method, path, body=json.dumps(body).encode() if isinstance(body, (dict, list)) else body, headers=h)
+    return c, c.getresponse()
+
+
+def get_json(path, auth=None):
+    try:
+        c, r = upstream("GET", path, timeout=10, auth=auth)
+        data = json.loads(r.read() or b"null")
+        c.close()
+        return data if r.status == 200 else None
+    except Exception:
+        return None
+
+
+def model_list(auth=None):
+    """(name, details) for each id the server lists: the stable id and the running preset's alias."""
+    m = get_json("/v1/models", auth) or {}
+    h = get_json("/health", auth) or {}
+    rows = []
+    for d in m.get("data", []):
+        if "text" not in (d.get("architecture", {}).get("input_modalities") or ["text"]):
+            continue
+        mid = d["id"]
+        name = mid if ":" in mid else mid + ":latest"
+        rows.append((name, {"ctx": (d.get("meta") or {}).get("n_ctx") or h.get("max_context"),
+                            "vision": "image" in (d.get("architecture", {}).get("input_modalities") or [])}))
+    return rows
+
+
+def details(name):
+    preset = name.split(":", 1)[1] if ":" in name else ""
+    return {"parent_model": "", "format": "gguf", "family": "qwen3", "families": ["qwen3"], "parameter_size": "125B",
+            "quantization_level": preset if preset and preset != "latest" else "GSQ-RCO"}
+
+
+def tag_entry(name, info, running=False):
+    e = {"name": name, "model": name, "modified_at": now_iso(), "size": 0,
+         "digest": hashlib.sha256(name.encode()).hexdigest(), "details": details(name)}
+    if running:
+        e.update({"expires_at": "2099-01-01T00:00:00Z", "size_vram": 0, "context_length": info.get("ctx") or 0})
+    return e
+
+
+def to_openai_messages(msgs):
+    out, pending_ids = [], []
+    for m in msgs or []:
+        role = m.get("role", "user")
+        text = m.get("content") or ""
+        imgs = m.get("images") or []
+        if role == "tool":
+            tid = pending_ids.pop(0) if pending_ids else m.get("tool_call_id") or "call_0"
+            out.append({"role": "tool", "content": text if isinstance(text, str) else json.dumps(text), "tool_call_id": tid})
+            continue
+        msg = {"role": role}
+        if imgs and role == "user":
+            parts = [{"type": "text", "text": text}] if text else []
+            for b in imgs:
+                b = b if isinstance(b, str) else base64.b64encode(b).decode()
+                mime = "image/png" if b.startswith("iVBOR") else "image/webp" if b.startswith("UklGR") else \
+                       "image/gif" if b.startswith("R0lG") else "image/jpeg"
+                parts.append({"type": "image_url", "image_url": {"url": b if b.startswith("data:") else f"data:{mime};base64,{b}"}})
+            msg["content"] = parts
+        else:
+            msg["content"] = text
+        if role == "assistant" and m.get("thinking"):
+            msg["reasoning_content"] = m["thinking"]
+        if role == "assistant" and m.get("tool_calls"):
+            calls = []
+            for i, tc in enumerate(m["tool_calls"]):
+                f = tc.get("function", {})
+                tid = tc.get("id") or f"call_{len(out)}_{i}"
+                args = f.get("arguments", {})
+                calls.append({"id": tid, "type": "function",
+                              "function": {"name": f.get("name", ""), "arguments": args if isinstance(args, str) else json.dumps(args)}})
+                pending_ids.append(tid)
+            msg["tool_calls"] = calls
+        out.append(msg)
+    return out
+
+
+def openai_body(req, messages):
+    o = req.get("options") or {}
+    body = {"model": req.get("model") or "qwen3.8-flash-next", "messages": messages, "stream": True,
+            "stream_options": {"include_usage": True}}
+    for ok, k in (("temperature", "temperature"), ("top_p", "top_p"), ("top_k", "top_k"), ("seed", "seed"), ("stop", "stop"),
+                  ("presence_penalty", "presence_penalty"), ("frequency_penalty", "frequency_penalty"), ("min_p", "min_p"),
+                  ("repeat_penalty", "repetition_penalty")):
+        if o.get(ok) is not None:
+            body[k] = o[ok]
+    if o.get("num_predict") not in (None, -1, -2):
+        body["max_tokens"] = int(o["num_predict"])
+    if req.get("tools"):
+        body["tools"] = req["tools"]
+    think = req.get("think")
+    if think is not None:
+        if isinstance(think, str):                       # "low" | "medium" | "high"
+            body["reasoning_effort"] = think
+        else:
+            body["chat_template_kwargs"] = {"enable_thinking": bool(think)}
+    fmt = req.get("format")
+    if fmt == "json":
+        body["response_format"] = {"type": "json_object"}
+    elif isinstance(fmt, dict):
+        body["response_format"] = {"type": "json_schema", "json_schema": {"name": "output", "schema": fmt}}
+    return body
+
+
+class ClientGone(Exception):
+    """The client (the gateway) closed its connection: the upstream request is closed too, so Strata stops."""
+
+
+def client_gone(sock) -> bool:
+    """Whether the client hung up: its socket reads as closed.  (Strata's keep-alives during a long prompt reach the
+    bridge every few seconds, so this is checked even before the first token.)"""
+    try:
+        readable, _, _ = select.select([sock], [], [], 0)
+        if not readable:
+            return False
+        return sock.recv(1, socket.MSG_PEEK | socket.MSG_DONTWAIT) == b""
+    except BlockingIOError:
+        return False
+    except OSError:
+        return True
+
+
+def stream_openai(body, auth=None, gone=None):
+    """Yield ('content'|'thinking', text), ('tool_calls', list), ('done', info) from the upstream SSE stream.  `gone`:
+    a check for the client having left, made at each line from upstream (ClientGone, and the upstream is closed)."""
+    c, r = upstream("POST", "/v1/chat/completions", body, auth=auth)
+    if r.status != 200:
+        err = r.read().decode(errors="replace")
+        c.close()
+        raise RuntimeError(f"upstream {r.status}: {err[:500]}")
+    calls, info = {}, {"finish": "stop", "usage": {}, "timings": {}}
+    try:
+        for raw in r:
+            if gone is not None and gone():
+                raise ClientGone()
+            line = raw.strip()
+            if not line.startswith(b"data:"):
+                continue
+            data = line[5:].strip()
+            if data == b"[DONE]":
+                break
+            d = json.loads(data)
+            if d.get("usage"):
+                info["usage"] = d["usage"]
+            if d.get("timings"):
+                info["timings"] = d["timings"]
+            for ch in d.get("choices") or []:
+                delta = ch.get("delta") or {}
+                if delta.get("reasoning_content"):
+                    yield "thinking", delta["reasoning_content"]
+                if delta.get("content"):
+                    yield "content", delta["content"]
+                for tc in delta.get("tool_calls") or []:
+                    slot = calls.setdefault(tc.get("index", 0), {"name": "", "arguments": ""})
+                    f = tc.get("function") or {}
+                    slot["name"] += f.get("name") or ""
+                    slot["arguments"] += f.get("arguments") or ""
+                if ch.get("finish_reason"):
+                    info["finish"] = ch["finish_reason"]
+    finally:
+        c.close()
+    if calls:
+        out = []
+        for i in sorted(calls):
+            try:
+                args = json.loads(calls[i]["arguments"] or "{}")
+            except ValueError:
+                args = {"_raw": calls[i]["arguments"]}
+            out.append({"function": {"name": calls[i]["name"], "arguments": args}})
+        yield "tool_calls", out
+    yield "done", info
+
+
+def final_fields(info, t0):
+    u, t = info.get("usage") or {}, info.get("timings") or {}
+    total = int((time.time() - t0) * 1e9)
+    return {"done_reason": "stop" if info.get("finish") in ("stop", "tool_calls") else info.get("finish", "stop"),
+            "total_duration": total, "load_duration": 0,
+            "prompt_eval_count": u.get("prompt_tokens", t.get("prompt_n", 0)),
+            "prompt_eval_duration": int(float(t.get("prompt_ms", 0)) * 1e6),
+            "eval_count": u.get("completion_tokens", t.get("predicted_n", 0)),
+            "eval_duration": int(float(t.get("predicted_ms", 0)) * 1e6)}
+
+
+class H(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+    server_version = "outcrop-ollama-bridge"
+
+    def log_message(self, fmt, *args):
+        sys.stderr.write("%s %s\n" % (self.address_string(), fmt % args))
+
+    def send_json(self, code, obj):
+        b = json.dumps(obj).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(b)))
+        self.end_headers()
+        self.wfile.write(b)
+
+    def auth(self):
+        """The client's own credentials, passed on to the server (so an API key there also guards the bridge)."""
+        return {k: v for k, v in self.headers.items() if k.lower() in ("authorization", "x-api-key")}
+
+    def body(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(n) if n else b""
+        try:
+            return json.loads(raw or b"{}")
+        except ValueError:
+            return {}
+
+    def do_HEAD(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", "17")
+        self.end_headers()
+
+    def do_GET(self):
+        p = urllib.parse.urlparse(self.path).path
+        if p.startswith("/v1/"):
+            return self.proxy("GET")
+        if p in ("/", ""):
+            b = b"Ollama is running"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
+        elif p == "/api/version":
+            self.send_json(200, {"version": VERSION})
+        elif p == "/api/tags":
+            self.send_json(200, {"models": [tag_entry(n, i) for n, i in model_list(self.auth())]})
+        elif p == "/api/ps":
+            self.send_json(200, {"models": [tag_entry(n, i, True) for n, i in model_list(self.auth())]})
+        else:
+            self.send_json(404, {"error": "not found"})
+
+    def do_DELETE(self):
+        self.send_json(501, {"error": "models are managed with outcrop on the server"})
+
+    def do_POST(self):
+        p = urllib.parse.urlparse(self.path).path
+        if p.startswith("/v1/"):
+            return self.proxy("POST")
+        req = self.body()
+        try:
+            if p == "/api/chat":
+                return self.chat(req, generate=False)
+            if p == "/api/generate":
+                return self.chat(req, generate=True)
+            if p == "/api/show":
+                rows = dict(model_list(self.auth()))
+                name = req.get("model") or req.get("name") or "qwen3.8-flash-next:latest"
+                info = rows.get(name) or next(iter(rows.values()), {})
+                caps = ["completion", "tools", "thinking"] + (["vision"] if info.get("vision") else [])
+                return self.send_json(200, {"license": "Apache-2.0", "modelfile": "", "parameters": "", "template": "",
+                                            "details": details(name), "capabilities": caps, "modified_at": now_iso(),
+                                            "model_info": {"general.architecture": "qwen3", "general.parameter_count": 125_000_000_000,
+                                                           "qwen3.context_length": info.get("ctx") or 0}})
+            if p in ("/api/embed", "/api/embeddings"):
+                return self.send_json(501, {"error": "embeddings are not available from this server"})
+            if p in ("/api/pull", "/api/push", "/api/create", "/api/copy", "/api/delete", "/api/blobs"):
+                return self.send_json(501, {"error": "models are managed with outcrop on the server"})
+            self.send_json(404, {"error": "not found"})
+        except (BrokenPipeError, ConnectionResetError, ClientGone):
+            self.close_connection = True
+        except Exception as e:  # report upstream problems the way Ollama does
+            try:
+                self.send_json(500, {"error": str(e)})
+            except Exception:
+                pass
+
+    def chat(self, req, generate):
+        model = req.get("model") or "qwen3.8-flash-next:latest"
+        if generate:
+            if not req.get("prompt") and not req.get("images"):        # an empty generate loads the model: nothing to do here
+                return self.send_json(200, {"model": model, "created_at": now_iso(), "response": "", "done": True,
+                                            "done_reason": "load"})
+            msgs = ([{"role": "system", "content": req["system"]}] if req.get("system") else []) + \
+                   [{"role": "user", "content": req.get("prompt", ""), "images": req.get("images")}]
+        else:
+            msgs = req.get("messages") or []
+            if not msgs:
+                return self.send_json(200, {"model": model, "created_at": now_iso(),
+                                            "message": {"role": "assistant", "content": ""}, "done": True, "done_reason": "load"})
+        body = openai_body(req, to_openai_messages(msgs))
+        stream = req.get("stream", True) is not False
+        t0 = time.time()
+        gone = lambda: client_gone(self.connection)    # noqa: E731
+        if not stream:
+            content, thinking, calls, info = [], [], None, {}
+            for kind, v in stream_openai(body, self.auth(), gone):
+                if kind == "content":
+                    content.append(v)
+                elif kind == "thinking":
+                    thinking.append(v)
+                elif kind == "tool_calls":
+                    calls = v
+                else:
+                    info = v
+            res = {"model": model, "created_at": now_iso(), "done": True, **final_fields(info, t0)}
+            if generate:
+                res["response"] = "".join(content)
+                if thinking:
+                    res["thinking"] = "".join(thinking)
+            else:
+                msg = {"role": "assistant", "content": "".join(content)}
+                if thinking:
+                    msg["thinking"] = "".join(thinking)
+                if calls:
+                    msg["tool_calls"] = calls
+                res["message"] = msg
+            return self.send_json(200, res)
+        gen = stream_openai(body, self.auth(), gone)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-ndjson")
+        self.send_header("Transfer-Encoding", "chunked")
+        self.end_headers()
+
+        def emit(obj):
+            b = json.dumps(obj).encode() + b"\n"
+            self.wfile.write(f"{len(b):X}\r\n".encode() + b + b"\r\n")
+            self.wfile.flush()
+
+        try:
+            for kind, v in gen:
+                base = {"model": model, "created_at": now_iso(), "done": False}
+                if kind in ("content", "thinking"):
+                    if generate:
+                        emit({**base, "response": v if kind == "content" else "", **({"thinking": v} if kind == "thinking" else {})})
+                    else:
+                        emit({**base, "message": {"role": "assistant", "content": v if kind == "content" else "",
+                                                  **({"thinking": v} if kind == "thinking" else {})}})
+                elif kind == "tool_calls" and not generate:
+                    emit({**base, "message": {"role": "assistant", "content": "", "tool_calls": v}})
+                elif kind == "done":
+                    last = {"model": model, "created_at": now_iso(), "done": True, **final_fields(v, t0)}
+                    last.update({"response": ""} if generate else {"message": {"role": "assistant", "content": ""}})
+                    emit(last)
+        except (BrokenPipeError, ConnectionResetError, ClientGone):
+            gen.close()
+            self.close_connection = True
+            return
+        except Exception as e:
+            try:
+                emit({"error": str(e)})
+            except Exception:
+                return
+        try:
+            self.wfile.write(b"0\r\n\r\n")
+            self.wfile.flush()
+        except Exception:
+            pass
+
+    def proxy(self, method):
+        n = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(n) if n else None
+        try:
+            c = http.client.HTTPConnection(UP.hostname, UP.port or 80, timeout=3600)
+            hdr = {k: v for k, v in self.headers.items() if k.lower() in ("content-type", "authorization", "x-api-key", "accept",
+                                                                         "anthropic-version")}
+            if A.api_key and "authorization" not in {k.lower() for k in hdr}:
+                hdr["Authorization"] = f"Bearer {A.api_key}"
+            c.request(method, self.path, body=raw, headers=hdr)
+            r = c.getresponse()
+        except Exception as e:
+            return self.send_json(502, {"error": {"message": f"the Strata server is not answering: {e}"}})
+        self.send_response(r.status)
+        for k, v in r.getheaders():
+            if k.lower() in ("content-type", "cache-control", "x-accel-buffering"):
+                self.send_header(k, v)
+        self.send_header("Transfer-Encoding", "chunked")
+        self.end_headers()
+        try:
+            while True:
+                chunk = r.read1(65536) if hasattr(r, "read1") else r.read(65536)
+                if not chunk:
+                    break
+                self.wfile.write(f"{len(chunk):X}\r\n".encode() + chunk + b"\r\n")
+                self.wfile.flush()
+            self.wfile.write(b"0\r\n\r\n")
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            c.close()
+
+
+class Server(socketserver.ThreadingMixIn, HTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+
+if __name__ == "__main__":
+    srv = Server((A.listen, A.port), H)
+    print(f"outcrop-ollama-bridge: Ollama API on {A.listen}:{A.port}, answered by {A.upstream}", flush=True)
+    srv.serve_forever()

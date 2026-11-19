@@ -1,0 +1,54 @@
+{
+  "profile": {
+    "name": "m6000-64g",
+    "extends": "m6000-base",
+    "title": "Quadro M6000 24 GB with 64 GB of RAM",
+    "match": {
+      "gpus": [
+        "Quadro M6000 24GB"
+      ],
+      "similar_gpus": [
+        "Tesla M40 24GB"
+      ],
+      "vram_mib_min": 23000,
+      "ram_gib": [
+        48,
+        96
+      ]
+    },
+    "packs": [
+      "q2_0",
+      "iq3_xxs",
+      "iq3_s"
+    ],
+    "default_preset": "balanced",
+    "tested": "2026-11-18 on the reference system with RAM held so 59 GiB was available: speed 43.5 / 49.3 / 35.0 / 42.5 tok/s, balanced 39.4 / 44.2 / 33.9 / 41.9, quality 39.0 / 43.2 / 30.1 / 38.5 (chat / code / story / 4K doc), prompts 195 to 200 tok/s; every pack in full mode, switches about 70 s, answer checks passed",
+    "notes": [
+      "Every pack keeps all its experts in RAM. With quality running, about 5 GiB of RAM is left for everything else, so the conversation cache is kept to 4 GiB."
+    ]
+  },
+  "common": {
+    "args": [
+      "--adapt-async 1",
+      "--conversation-cache-mib 4096",
+      "--conversation-cache-slots 2"
+    ]
+  },
+  "presets": {
+    "speed": {
+      "description": "Q2_0 pack, 2.4 bits/weight: the fastest; task average 89.1 against the original's 93.1",
+      "pack": "q2_0",
+      "context": 262144
+    },
+    "balanced": {
+      "description": "IQ3_XXS pack, 3.0 bits/weight: task average 92.6",
+      "pack": "iq3_xxs",
+      "context": 262144
+    },
+    "quality": {
+      "description": "IQ3_S pack, 3.5 bits/weight: task average 93.3, level with the original model",
+      "pack": "iq3_s",
+      "context": 262144
+    }
+  }
+}

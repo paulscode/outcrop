@@ -1,0 +1,118 @@
+{
+ "chat": [
+  {
+   "prompt_n": 53,
+   "prompt_tps": 48.8,
+   "decode_n": 256,
+   "decode_tps": 36.4,
+   "ttft_s": 1.1572576619998927,
+   "total_s": 8.150429641000073,
+   "text": "A hash table finds a value through a two-step process: **hashing** to find a location, and **probing** to handle collisions.\n\n### 1. The Core Process\n\n1.  **Hashing**: The key is passed through a **hash function**, which converts it into an integer index (e.g., `hash(\"apple\") = 5`).\n2.  **Direct Access**: The table uses this index to look directly at that slot in the underlying array.\n3.  **Collision Handling**: If two different keys hash to the same index, a **collision** occurs. The table must then use a strategy to find the correct value among the colliding entries.\n\n### 2. Collision Strategies\n\nThere are two main ways to handle collisions:\n\n*   **Chaining**: Each slot in the array holds a linked list (or another data structure). If a collision occurs, the new key-value pair is simply added to the list at that index. To find a value, you hash the key, go to the index, and then search the list.\n*   **Open Addressing**: If a slot is occupied, the table probes for the next available slot using a sequence (e.g., linear probing: check index"
+  },
+  {
+   "prompt_n": 53,
+   "prompt_tps": 47.7,
+   "decode_n": 256,
+   "decode_tps": 37.1,
+   "ttft_s": 1.1588938219999818,
+   "total_s": 8.025578894000091,
+   "text": "A hash table finds a value through a two-step process: **hashing** to find a location, and **probing** to handle collisions.\n\n### 1. The Core Process\n\n1.  **Hashing**: The key is passed through a **hash function**, which converts it into an integer index (e.g., `hash(\"apple\") = 5`).\n2.  **Direct Access**: The hash table uses this index to look directly at that slot in its underlying array.\n3.  **Collision Handling**: If two different keys hash to the same index, a **collision** occurs. The table must resolve this to store both values.\n\n### 2. Handling Collisions\n\nThere are two main strategies:\n\n*   **Chaining**: Each slot in the array holds a linked list (or another data structure). If a collision occurs, the new key-value pair is simply added to the list at that index.\n*   **Open Addressing**: If a slot is occupied, the table probes for the next available slot (e.g., linear probing: check index+1, index+2, etc.).\n\n### 3. Small Example (Using Chaining)\n\nImagine a hash table with 5 slots (indices "
+  },
+  {
+   "prompt_n": 53,
+   "prompt_tps": 47.1,
+   "decode_n": 256,
+   "decode_tps": 37.7,
+   "ttft_s": 1.173179067000092,
+   "total_s": 7.930950737000103,
+   "text": "A hash table finds a value through a process that combines **hashing** and **direct indexing**, with specific strategies to handle **collisions**. Here is a step-by-step explanation:\n\n### 1. The Core Process\n1. **Hash the Key**: The hash table takes the key (e.g., `\"apple\"`) and passes it through a **hash function**. This function converts the key into a fixed-size integer (the **hash code**).\n2. **Compute the Index**: The hash code is mapped to an index in the underlying array (bucket array) using a modulo operation:  \n   `index = hash_code % array_size`\n3. **Access the Bucket**: The table looks at the array slot at that index.\n4. **Retrieve the Value**:\n   - If the bucket contains the key, the associated value is returned.\n   - If the bucket is empty, the key is not present.\n   - If the bucket contains a different key, a **collision** has occurred.\n\n### 2. Handling Collisions\nA collision happens when two different keys produce the same index. Hash tables handle this in two main ways:\n\n- **Chaining**: Each bucket holds a linked list (or tree) of"
+  }
+ ],
+ "code": [
+  {
+   "prompt_n": 68,
+   "prompt_tps": 49.2,
+   "decode_n": 256,
+   "decode_tps": 44.3,
+   "ttft_s": 1.4295037340000363,
+   "total_s": 7.170287651000081,
+   "text": "```python\nfrom typing import Optional, Any\n\n\nclass Node:\n    \"\"\"Doubly linked list node for LRU cache.\"\"\"\n    def __init__(self, key: Any = None, value: Any = None):\n        self.key = key\n        self.value = value\n        self.prev: Optional['Node'] = None\n        self.next: Optional['Node'] = None\n\n\nclass LRUCache:\n    \"\"\"\n    LRU Cache implementation using a dict and a doubly linked list.\n    \n    - get(key): Returns the value if key exists, else -1. Moves the accessed node to the front (most recently used).\n    - put(key, value): Inserts or updates the key-value pair. If the cache exceeds capacity, evicts the least recently used item.\n    \"\"\"\n\n    def __init__(self, capacity: int):\n        self.capacity = capacity\n        self.cache: dict[Any, Node] = {}\n        # Dummy head and tail for doubly linked list\n        self.head = Node()  # Most recently used side\n        self.tail = Node()  # Least recently used side\n        self.head.next = self.tail\n        self.tail.prev = self.head\n\n    def _remove"
+  },
+  {
+   "prompt_n": 68,
+   "prompt_tps": 48.2,
+   "decode_n": 256,
+   "decode_tps": 42.1,
+   "ttft_s": 1.4568621020000592,
+   "total_s": 7.491202524000073,
+   "text": "```python\nfrom typing import Optional, Any\n\n\nclass Node:\n    \"\"\"Doubly linked list node for LRU cache.\"\"\"\n    def __init__(self, key: Any = None, value: Any = None):\n        self.key = key\n        self.value = value\n        self.prev: Optional['Node'] = None\n        self.next: Optional['Node'] = None\n\n\nclass LRUCache:\n    \"\"\"\n    LRU Cache implementation using a dict and a doubly linked list.\n    \n    - get(key): Returns the value if key exists, else -1. Moves accessed item to front.\n    - put(key, value): Inserts or updates the key-value pair. If capacity is exceeded,\n      evicts the least recently used item.\n    \"\"\"\n    \n    def __init__(self, capacity: int):\n        self.capacity = capacity\n        self.cache: dict[Any, Node] = {}\n        # Dummy head and tail for doubly linked list\n        self.head = Node()  # Most recently used side\n        self.tail = Node()  # Least recently used side\n        self.head.next = self.tail\n        self.tail.prev = self.head\n    \n    def _remove(self, node:"
+  },
+  {
+   "prompt_n": 68,
+   "prompt_tps": 48.6,
+   "decode_n": 256,
+   "decode_tps": 41.0,
+   "ttft_s": 1.4444992419998925,
+   "total_s": 7.641160205000006,
+   "text": "```python\nfrom typing import Optional, Any\n\n\nclass Node:\n    \"\"\"Doubly linked list node for LRU cache.\"\"\"\n    def __init__(self, key: Any = None, value: Any = None):\n        self.key = key\n        self.value = value\n        self.prev: Optional['Node'] = None\n        self.next: Optional['Node'] = None\n\n\nclass LRUCache:\n    \"\"\"\n    LRU Cache implementation using a dict and a doubly linked list.\n    \n    - get(key): Returns the value if key exists, else -1. Moves the accessed node to the front (most recently used).\n    - put(key, value): Inserts or updates the key-value pair. If the cache exceeds capacity, evicts the least recently used item.\n    \"\"\"\n\n    def __init__(self, capacity: int):\n        if capacity <= 0:\n            raise ValueError(\"Capacity must be positive\")\n        self.capacity = capacity\n        self.cache: dict[Any, Node] = {}\n        # Dummy head and tail for doubly linked list\n        self.head = Node()  # Most recently used side\n        self.tail = Node()  # Least recently used side\n        self"
+  }
+ ],
+ "story": [
+  {
+   "prompt_n": 53,
+   "prompt_tps": 48.4,
+   "decode_n": 256,
+   "decode_tps": 33.7,
+   "ttft_s": 1.1388993069999742,
+   "total_s": 8.690873411999974,
+   "text": "The fog had been thick for three days, a suffocating gray blanket that swallowed the horizon and turned the world into a void. Elias, the keeper of the Blackwood Point Light, had stopped counting the hours. Time, out here, was measured only by the rhythmic *thrum-thrum-thrum* of the lens rotating above him and the crash of waves against the granite base.\n\nHe was polishing the brass railing of the gallery when he saw it.\n\nIt wasn\u2019t a bottle, not at first. It was a glint of green glass, half-buried in the wet sand of the rocky cove below the tower. Elias frowned. The tide was high, and the currents around Blackwood were notorious for pulling things out to sea, not bringing them in. He grabbed his oilskin coat and descended the spiral stairs, his boots heavy on the iron steps.\n\nThe beach was slick with kelp and broken shells. Elias picked up the object. It was a wine bottle, dark green, sealed with wax that had cracked but held firm. Inside, a rolled piece of parchment floated in a small amount of seawater.\n\nHe carried it back to the lantern room, his heart beating a strange, irregular rhythm against his ribs. He"
+  },
+  {
+   "prompt_n": 53,
+   "prompt_tps": 47.4,
+   "decode_n": 256,
+   "decode_tps": 31.2,
+   "ttft_s": 1.1659492059998229,
+   "total_s": 9.338733537999815,
+   "text": "The fog at Blackwood Point didn\u2019t just roll in; it swallowed the world whole. For Elias Thorne, the lighthouse keeper, the fog was a familiar companion, thick enough to taste and heavy enough to weigh down his shoulders. He had tended the light for thirty years, long enough to know that the sea kept its secrets close, usually burying them under layers of silt and silence.\n\nIt was a Tuesday in late October when the routine broke. Elias was walking the perimeter of the rocky shore, checking for driftwood that might snag the nets of the local fishermen, when a glint of green caught his eye. It wasn\u2019t the usual jagged glass of broken bottles, but something smooth, nestled in a crevice of the basalt rocks like a jewel.\n\nHe picked it up. It was a bottle, sealed with wax that had hardened into a dark, amber crust. Inside, rolled tightly, was a slip of parchment.\n\nElias\u2019s heart did a strange, fluttering thing. He hadn\u2019t found a message in a bottle since he was a boy, and even then, it had been a prank from a schoolmate. He carried it back to the lighthouse, his boots crunching on the gravel, the wind howling"
+  },
+  {
+   "prompt_n": 53,
+   "prompt_tps": 46.4,
+   "decode_n": 256,
+   "decode_tps": 31.1,
+   "ttft_s": 1.1899460970000746,
+   "total_s": 9.389997214999994,
+   "text": "The fog at Blackwood Point didn\u2019t just roll in; it swallowed the world whole. For Elias Thorne, it was a familiar companion, thick and gray, muffling the crash of the Atlantic against the jagged rocks below. For thirty years, Elias had tended the light, his life measured in the rhythmic sweep of the beam and the smell of kelp and old oil.\n\nIt was a Tuesday in late October when the storm broke. The wind howled like a wounded animal, tearing at the shingles of the keeper\u2019s cottage. When the gale finally subsided, leaving behind a silence so profound it rang in Elias\u2019s ears, he stepped out onto the gallery to inspect the lantern room.\n\nThat\u2019s when he saw it.\n\nWedged between two barnacle-encrusted rocks at the base of the tower, half-buried in the churning foam, was a glint of green glass. It wasn\u2019t a bottle, not exactly. It was a heavy, cobalt-blue vessel, sealed with wax that looked ancient, cracked like dried mud.\n\nElias descended the spiral stairs, his knees protesting the damp cold. He waded into the shallows, the water numbing his boots, and retrieved the object. It"
+  }
+ ],
+ "doc4k": [
+  {
+   "prompt_n": 4067,
+   "prompt_tps": 194.7,
+   "decode_n": 256,
+   "decode_tps": 40.4,
+   "ttft_s": 20.946458639999946,
+   "total_s": 27.237004665999848,
+   "text": "Based on the provided data, here is an analysis of the record structure and instructions for lookup.\n\n### 1. Structure of the Records\n\nThe data consists of a sequential list of text-based records. Each record follows a strict, uniform format:\n\n*   **Format:** `recordID: content`\n*   **ID Pattern:** The identifier is always prefixed with the string `record` followed by a **7-digit zero-padded integer** (e.g., `0000001`, `0000010`, `0000211`).\n*   **Separator:** A colon and a space (`: `) separate the ID from the content.\n*   **Content:** The content is identical for every single record in this dataset. It consists of the first eight letters of the Greek alphabet in lowercase, separated by spaces:\n    > `alpha beta gamma delta epsilon zeta eta theta.`\n*   **Sequence:** The records are ordered sequentially by ID, starting from `record000001` and ending at `record000211`.\n\n### 2. How to Look Up a Record by Its ID\n\nSince the content is identical for all records, a"
+  },
+  {
+   "prompt_n": 4067,
+   "prompt_tps": 192.8,
+   "decode_n": 256,
+   "decode_tps": 40.6,
+   "ttft_s": 21.1447795470001,
+   "total_s": 27.411719164000033,
+   "text": "Based on the provided data, here is an analysis of the record structure and instructions for lookup.\n\n### 1. Structure of the Records\n\nThe data consists of a sequential list of text-based records. Each record follows a strict, uniform format:\n\n*   **Format:** `recordID: content`\n*   **Record ID:** A string starting with the prefix `record` followed by a **zero-padded 6-digit integer** (e.g., `000001`, `000100`, `000211`).\n*   **Separator:** A colon and a space (`: `) separates the ID from the content.\n*   **Content:** The string `alpha beta gamma delta epsilon zeta eta theta.` is identical for every single record in this dataset.\n*   **Sequence:** The records are ordered sequentially from `record000001` to `record000211`.\n\n**Example Breakdown:**\n```text\nrecord000001: alpha beta gamma delta epsilon zeta eta theta.\n^           ^ ^\n|           | |\n|           | +-- Content (identical for all)\n|           +----"
+  },
+  {
+   "prompt_n": 4067,
+   "prompt_tps": 192.3,
+   "decode_n": 256,
+   "decode_tps": 37.5,
+   "ttft_s": 21.200902129000042,
+   "total_s": 27.979337017000034,
+   "text": "Based on the provided data, here is an analysis of the record structure and instructions for lookup.\n\n### 1. Structure of the Records\n\nThe data consists of a flat list of text-based records. Each record follows a strict, uniform format:\n\n*   **Format:** `recordID: content`\n*   **Record ID:** A string starting with the prefix `record` followed by a zero-padded 6-digit integer (e.g., `record000001`, `record000211`).\n*   **Separator:** A colon and a space (`: `) separate the ID from the content.\n*   **Content:** The text `alpha beta gamma delta epsilon zeta eta theta.` is identical for every single record in this dataset.\n*   **Sequence:** The records are ordered sequentially by ID, starting from `record000001` and ending at `record000211`.\n\n**Example Breakdown:**\n```text\nrecord000001: alpha beta gamma delta epsilon zeta eta theta.\n^           ^ ^\n|           | |\n|           | +-- Content (identical for all records)\n|           +---- Separator"
+  }
+ ]
+}

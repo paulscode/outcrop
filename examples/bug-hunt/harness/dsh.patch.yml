@@ -1,0 +1,55 @@
+# dsh settings for the bug-hunt runs (run-one.sh installs this as the headless profile's cordis.patch.yml).
+#
+# - The model is your Outcrop installation, through the container's forwarder (entrypoint.sh) on 127.0.0.1:8080.
+# - Everything that reaches the internet is off: web search and fetch, the DeepSeek session-log upload, telemetry. The
+#   container has no network either, so this is the second fence, not the only one.
+# - Required for a local model that answers one request at a time (examples/bug-hunt/README.md, "Two dsh settings"):
+#   streamIdleTimeoutMs 30 minutes (dsh's default, 5, drops requests that are only waiting their turn), and one helper
+#   agent at a time (dsh's default is 8, each another conversation queued on the same server).
+# - Sessions are kept uncompressed, so the transcripts can be read.
+
+- id: llm-pi-ai
+  config:
+    providers:
+      outcrop:
+        apiKeyEnv: GATEWAY_API_KEY
+        api: openai-completions
+        baseURL: http://127.0.0.1:8080/v1
+        compat:
+          supportsDeveloperRole: false
+          maxTokensField: max_tokens
+        streamIdleTimeoutMs: 1800000
+        models:
+          - id: qwen3.8-flash-next
+            contextWindow: 262144
+            maxTokens: 32768
+
+- id: agent-default-model
+  config:
+    provider: outcrop
+    model: qwen3.8-flash-next
+
+- id: subagent
+  config:
+    maxActiveSubagents: 1
+
+- id: tool-web
+  disabled: true
+- id: web
+  disabled: true
+- id: web-search-deepseek
+  disabled: true
+- id: web-deepseek-api
+  disabled: true
+- id: web-fetch-http
+  disabled: true
+
+- id: session-log-deepseek
+  disabled: true
+- id: session-telemetry-otel
+  disabled: true
+
+- id: session-persistence-jsonl
+  config:
+    root: /dsh-home/sessions
+    compression: none

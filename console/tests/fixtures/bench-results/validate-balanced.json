@@ -1,0 +1,118 @@
+{
+ "chat": [
+  {
+   "prompt_n": 53,
+   "prompt_tps": 49.3,
+   "decode_n": 256,
+   "decode_tps": 37.8,
+   "ttft_s": 1.1475315679999767,
+   "total_s": 7.885253981000005,
+   "text": "A hash table finds a value through a two-step process: **hashing** to find a location, and **searching** within that location if necessary.\n\n### Step 1: Hashing (Finding the Bucket)\n1.  **Input Key**: You provide a key (e.g., `\"apple\"`).\n2.  **Hash Function**: The hash table applies a mathematical function to the key to produce an integer called a **hash code**.\n    *   Example: `hash(\"apple\")` might return `105`.\n3.  **Index Calculation**: The hash code is mapped to an index in the underlying array (bucket) using modulo arithmetic.\n    *   If the array size is `10`, then `105 % 10 = 5`.\n    *   The table looks at **bucket 5**.\n\n### Step 2: Handling Collisions\nA **collision** occurs when two different keys produce the same index (e.g., `\"apple\"` and `\"banana\"` both hash to bucket 5). Hash tables handle this in two main ways:\n\n#### A. Chaining (Most Common)\n- Each bucket holds a **linked list** (or tree) of entries.\n"
+  },
+  {
+   "prompt_n": 53,
+   "prompt_tps": 48.0,
+   "decode_n": 256,
+   "decode_tps": 37.8,
+   "ttft_s": 1.1494160440001906,
+   "total_s": 7.882711142000062,
+   "text": "A hash table finds a value through a two-step process: **hashing** to find a location, and **searching** within that location if necessary.\n\n### 1. The Basic Process\n\n1.  **Hashing**: The key (e.g., `\"apple\"`) is passed through a **hash function**. This function converts the key into an integer index (e.g., `42`).\n2.  **Indexing**: The hash table uses this index to look at a specific slot (bucket) in its underlying array.\n3.  **Retrieval**:\n    *   If the slot is empty, the key is not in the table.\n    *   If the slot contains a key-value pair, the table compares the stored key with the search key. If they match, it returns the value.\n\n### 2. Handling Collisions\n\nA **collision** occurs when two different keys hash to the same index (e.g., `\"apple\"` and `\"banana\"` both hash to index `42`). Hash tables handle this in two main ways:\n\n#### A. Chaining (Most Common)\nEach bucket holds a **linked list** (or another data structure) of entries.\n*   When a collision"
+  },
+  {
+   "prompt_n": 53,
+   "prompt_tps": 46.4,
+   "decode_n": 256,
+   "decode_tps": 38.1,
+   "ttft_s": 1.188359601000002,
+   "total_s": 7.875716742000122,
+   "text": "A hash table finds a value through a two-step process: **hashing** to find a location, and **searching** within that location to handle collisions.\n\n### Step 1: Hashing (Finding the Bucket)\n1.  **Input Key**: You provide a key (e.g., `\"apple\"`).\n2.  **Hash Function**: The hash table applies a mathematical function to the key to produce an integer index (e.g., `hash(\"apple\") = 5`).\n3.  **Bucket Location**: This index points to a specific \"bucket\" (or slot) in the underlying array where the value *should* be stored.\n\n### Step 2: Handling Collisions\nA **collision** occurs when two different keys hash to the same index (e.g., `hash(\"apple\") = 5` and `hash(\"banana\") = 5`). Hash tables handle this in one of two main ways:\n\n#### A. Chaining (Most Common)\n- Each bucket holds a **linked list** (or another data structure) of entries.\n- If `\"apple\"` and `\"banana\"` both hash to index 5, they are stored in the same bucket as a list: `[(\"apple\", "
+  }
+ ],
+ "code": [
+  {
+   "prompt_n": 68,
+   "prompt_tps": 48.9,
+   "decode_n": 256,
+   "decode_tps": 44.5,
+   "ttft_s": 1.4358522630000152,
+   "total_s": 7.14265933799993,
+   "text": "```python\nfrom typing import Optional, Any\n\n\nclass Node:\n    \"\"\"Doubly linked list node for LRU cache.\"\"\"\n    def __init__(self, key: Any = None, value: Any = None):\n        self.key = key\n        self.value = value\n        self.prev: Optional[Node] = None\n        self.next: Optional[Node] = None\n\n\nclass LRUCache:\n    \"\"\"\n    LRU Cache using a dict and a doubly linked list.\n    \n    - get(key): returns the value if key exists, else -1. Moves the accessed node to the front (most recently used).\n    - put(key, value): inserts or updates the key-value pair. If capacity is exceeded, evicts the least recently used item.\n    \"\"\"\n\n    def __init__(self, capacity: int):\n        if capacity <= 0:\n            raise ValueError(\"Capacity must be positive\")\n        self.capacity = capacity\n        self.cache: dict[Any, Node] = {}\n        # Dummy head and tail to simplify edge cases\n        self.head = Node()  # Most recently used side\n        self.tail = Node()  # Least recently used side\n        self.head.next"
+  },
+  {
+   "prompt_n": 68,
+   "prompt_tps": 48.2,
+   "decode_n": 256,
+   "decode_tps": 43.6,
+   "ttft_s": 1.4567285809998793,
+   "total_s": 7.287951155999963,
+   "text": "```python\nfrom typing import Optional, Any\n\n\nclass Node:\n    \"\"\"Doubly linked list node for LRU cache.\"\"\"\n    def __init__(self, key: Any = None, value: Any = None):\n        self.key = key\n        self.value = value\n        self.prev: Optional[Node] = None\n        self.next: Optional[Node] = None\n\n\nclass LRUCache:\n    \"\"\"\n    LRU Cache using a dict and a doubly linked list.\n    \n    - get(key): returns the value if key exists, else -1. Moves the accessed node to the front (most recently used).\n    - put(key, value): inserts or updates the key-value pair. If capacity is exceeded, evicts the least recently used item.\n    \"\"\"\n\n    def __init__(self, capacity: int):\n        if capacity <= 0:\n            raise ValueError(\"Capacity must be positive\")\n        self.capacity = capacity\n        self.cache: dict[Any, Node] = {}\n        # Dummy head and tail to simplify edge cases\n        self.head = Node()  # Most recently used side\n        self.tail = Node()  # Least recently used side\n        self.head.next"
+  },
+  {
+   "prompt_n": 68,
+   "prompt_tps": 48.3,
+   "decode_n": 256,
+   "decode_tps": 43.6,
+   "ttft_s": 1.4542583980000927,
+   "total_s": 7.286597738999944,
+   "text": "```python\nfrom typing import Optional, Any\n\n\nclass Node:\n    \"\"\"Doubly linked list node for LRU cache.\"\"\"\n    def __init__(self, key: Any = None, value: Any = None):\n        self.key = key\n        self.value = value\n        self.prev: Optional[Node] = None\n        self.next: Optional[Node] = None\n\n\nclass LRUCache:\n    \"\"\"\n    LRU Cache using a dict and a doubly linked list.\n    \n    - get(key): returns the value if key exists, else -1. Moves the accessed node to the front (most recently used).\n    - put(key, value): inserts or updates the key-value pair. If capacity is exceeded, evicts the least recently used item.\n    \"\"\"\n\n    def __init__(self, capacity: int):\n        if capacity <= 0:\n            raise ValueError(\"Capacity must be positive\")\n        self.capacity = capacity\n        self.cache: dict[Any, Node] = {}\n        # Dummy head and tail to simplify edge cases\n        self.head = Node()  # Most recently used side\n        self.tail = Node()  # Least recently used side\n        self.head.next"
+  }
+ ],
+ "story": [
+  {
+   "prompt_n": 53,
+   "prompt_tps": 47.6,
+   "decode_n": 256,
+   "decode_tps": 31.6,
+   "ttft_s": 1.1588782720000381,
+   "total_s": 9.218563559999893,
+   "text": "The fog had been thick for three days, a gray wool blanket smothering the jagged coastline of Maine. Elias, the keeper of the Blackwood Point Lighthouse, had spent the morning polishing the brass lens, his hands moving with the rhythmic precision of a man who had done the same task for forty years. The light was his heartbeat; without it, the ships would wander into the rocks, and the silence would become too loud to bear.\n\nIt was late afternoon when the tide receded, revealing a stretch of wet sand usually hidden beneath the churning surf. Elias was walking the perimeter, checking for debris, when he saw it. It wasn\u2019t just any bottle. It was a heavy, cobalt-blue glass vessel, sealed with wax that looked freshly poured, sitting perfectly upright in the sand as if placed there by a gentle hand rather than a violent storm.\n\nHe picked it up. It was warm to the touch, despite the chill in the air. Inside, a single slip of parchment was rolled tight.\n\nElias carried it back to the keeper\u2019s cottage, the wind howling against the stone walls. He sat at his small oak table, the only light coming from the dying embers of the stove. With trembling fingers, he"
+  },
+  {
+   "prompt_n": 53,
+   "prompt_tps": 46.8,
+   "decode_n": 256,
+   "decode_tps": 32.0,
+   "ttft_s": 1.1791225049998957,
+   "total_s": 9.147448196999903,
+   "text": "The fog had been thick for three days, a gray wool blanket that smothered the world beyond the glass of the lighthouse. Elias, a man whose skin had taken on the texture of the sea itself\u2014salt-cured and weathered\u2014spent his evenings polishing the brass fittings of the lamp, a ritual as necessary to him as breathing.\n\nIt was on the fourth morning, when the fog finally lifted to reveal a churning, slate-gray sea, that Elias saw it.\n\nHe was walking the rocky perimeter of the island, checking for erosion, when a glint of green caught his eye. It wasn\u2019t the sun; the sky was too overcast for that. It was a bottle, half-buried in the wet sand near the tide line, its neck sealed with wax that had cracked under the pressure of the waves.\n\nElias picked it up. It was heavy, filled with something other than water. He shook it gently. A soft *thud* echoed from within.\n\nBack in the keeper\u2019s cottage, he placed the bottle on his workbench. The glass was old, thick, and green, typical of the early 20th century. He carefully chipped away the wax seal with a small knife. Inside,"
+  },
+  {
+   "prompt_n": 53,
+   "prompt_tps": 46.2,
+   "decode_n": 256,
+   "decode_tps": 30.7,
+   "ttft_s": 1.1929777539999122,
+   "total_s": 9.48413329899995,
+   "text": "The fog had been thick for three days, a gray wool blanket that smothered the world beyond the glass of the lighthouse. Elias, a man whose skin had weathered to the same texture as the granite cliffs he tended, wiped the condensation from the lantern room window. He was used to solitude. In fact, he preferred it. The sea was a demanding companion, but it never asked questions.\n\nIt was on the fourth morning, when the fog finally lifted to reveal a bruised purple sky, that Elias saw it.\n\nIt wasn\u2019t much\u2014a glint of green glass bobbing in the churning tide just below the rocky shelf. Curiosity, a rare visitor in Elias\u2019s routine, nudged him. He grabbed his oilskin coat and descended the spiral stairs, his boots slipping on the damp stone.\n\nThe bottle was trapped in a crevice of the rocks, half-submerged. It was old, the glass clouded with age, the cork sealed with wax that had cracked but held. Elias pried it loose, the cold water biting at his fingers. Back in the warmth of the keeper\u2019s cottage, he placed it on the table beside his cold tea.\n\nHe broke the wax seal. The cork popped with a sigh,"
+  }
+ ],
+ "doc4k": [
+  {
+   "prompt_n": 4067,
+   "prompt_tps": 193.5,
+   "decode_n": 256,
+   "decode_tps": 40.3,
+   "ttft_s": 21.067416615000184,
+   "total_s": 27.372050797000156,
+   "text": "Based on the provided data, here is a summary of the record structure and instructions for looking up a specific record.\n\n### 1. Structure of the Records\n\nEach record follows a strict, uniform format consisting of two main components:\n\n*   **Record ID:** A unique identifier in the format `recordXXXXXX`, where `XXXXXX` is a zero-padded 6-digit number (e.g., `record000001`, `record000211`).\n*   **Record Content:** A fixed sequence of eight Greek letters separated by spaces:\n    `alpha beta gamma delta epsilon zeta eta theta`\n\n**Key Characteristics:**\n*   **Uniformity:** Every single record from `record000001` to `record000211` contains the **exact same content**. There is no variation in the data payload.\n*   **Sequential IDs:** The IDs are sequential integers starting from 1 and ending at 211.\n*   **Delimiter:** A colon (`:`) separates the ID from the content.\n\n### 2. How to Look Up a Record by Its ID\n\nSince the content is identical for all records, the lookup process is straightforward:\n\n"
+  },
+  {
+   "prompt_n": 4067,
+   "prompt_tps": 192.4,
+   "decode_n": 256,
+   "decode_tps": 40.0,
+   "ttft_s": 21.187898157000063,
+   "total_s": 27.548710002999997,
+   "text": "Based on the provided data, here is an analysis of the record structure and instructions for looking up a specific record.\n\n### 1. Structure of the Records\n\nEach record follows a strict, uniform format consisting of two main components:\n\n*   **Record ID (Key):**\n    *   Format: `record` followed by a **7-digit zero-padded integer**.\n    *   Example: `record000001`, `record000100`, `record000211`.\n    *   The IDs are sequential, starting from `000001` and ending at `000211`.\n\n*   **Record Content (Value):**\n    *   Format: A fixed sequence of eight Greek letters separated by spaces.\n    *   Content: `alpha beta gamma delta epsilon zeta eta theta`\n    *   **Note:** The content is **identical** for every single record in this dataset. There is no variation in the data payload.\n\n**General Syntax:**\n```text\nrecord[7-digit-ID]: alpha beta gamma delta epsilon zeta eta theta.\n```\n\n### 2. How to Look Up a Record by Its ID\n\nSince"
+  },
+  {
+   "prompt_n": 4067,
+   "prompt_tps": 193.0,
+   "decode_n": 256,
+   "decode_tps": 39.3,
+   "ttft_s": 21.12830996400021,
+   "total_s": 27.591848750000054,
+   "text": "Based on the provided data, here is a summary of the structure and instructions for looking up a record.\n\n### 1. Structure of the Records\n\nThe data consists of a sequential list of **211 records** (from `record000001` to `record000211`). Each record follows a strict, uniform format:\n\n*   **Format:** `recordID: content`\n*   **ID Pattern:** The ID is a fixed-length string starting with `record` followed by a **6-digit zero-padded number** (e.g., `000001`, `000100`, `000211`).\n*   **Content:** Every single record contains the **exact same sequence** of eight Greek letters:\n    > `alpha beta gamma delta epsilon zeta eta theta`\n\n**Key Characteristics:**\n*   **Uniformity:** There is no variation in the content across any record.\n*   **Sequential IDs:** The IDs increment by 1 for each subsequent record.\n*   **Delimiter:** A colon (`:`) separates the ID from the content.\n\n---\n\n### 2. How to Look Up a Record by Its ID\n\n"
+  }
+ ]
+}

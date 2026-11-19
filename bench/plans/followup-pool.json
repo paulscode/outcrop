@@ -1,0 +1,51 @@
+{
+ "base": "quality",
+ "cases": "chat,code,story,doc4k",
+ "repeat": 3,
+ "tokens": 256,
+ "rounds": 1,
+ "arms": [
+  {
+   "name": "w32-default",
+   "env": {
+    "STRATA_DECODE_TIMING": "1"
+   }
+  },
+  {
+   "name": "w16",
+   "args": [
+    "--pool-workers 16"
+   ],
+   "env": {
+    "STRATA_DECODE_TIMING": "1"
+   }
+  },
+  {
+   "name": "w8",
+   "args": [
+    "--pool-workers 8"
+   ],
+   "env": {
+    "STRATA_DECODE_TIMING": "1"
+   }
+  },
+  {
+   "name": "numa2-w31",
+   "args": [
+    "--pool-cores 2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,58,60,62"
+   ],
+   "env": {
+    "STRATA_DECODE_TIMING": "1"
+   }
+  },
+  {
+   "name": "aux-auto",
+   "args": [
+    "--aux-cpus auto"
+   ],
+   "env": {
+    "STRATA_DECODE_TIMING": "1"
+   }
+  }
+ ]
+}

@@ -1,0 +1,288 @@
+From 35efe421f0b0a361bec55442d98eb2038de7285c Mon Sep 17 00:00:00 2001
+From: Outcrop <outcrop@localhost>
+Date: Sat, 31 Oct 2026 16:59:30 -0500
+Subject: [PATCH 4/6] sm_52: dense Q8_0 held as planes only
+ (STRATA_Q8_INPLACE), prompt dequant reads the planes, head packed in place
+ after the draft head gathers
+
+---
+ include/strata/kernels/native_mmvq.hpp |  6 ++++
+ src/core/mtp.cpp                       |  5 ++++
+ src/core/native_dense.cpp              | 23 ++++++++++++---
+ src/core/native_head.cpp               |  4 ++-
+ src/kernels/cuda/dequant_bf16.cu       | 38 ++++++++++++++++++++++++
+ src/kernels/cuda/native_mmvq.cu        | 41 ++++++++++++++++++++++++--
+ src/kernels/cuda/q8_sm60.cuh           |  7 +++++
+ 7 files changed, 116 insertions(+), 8 deletions(-)
+
+diff --git a/include/strata/kernels/native_mmvq.hpp b/include/strata/kernels/native_mmvq.hpp
+index 7bdd468..bcdd731 100644
+--- a/include/strata/kernels/native_mmvq.hpp
++++ b/include/strata/kernels/native_mmvq.hpp
+@@ -119,6 +119,12 @@ bool native_q8_0_sm60_pack_quiet(const void* weights, int n_in, int n_out, const
+ /// allocation (the same byte count, staged through the host: no second copy); otherwise a packed copy as
+ /// native_q8_0_sm60_pack makes. Either way native_q8_0_sm60_release must run before the caller frees the matrix.
+ bool native_q8_0_sm60_pack_in_place(void* weights, int n_in, int n_out, const char* what);
++/// STRATA_Q8_INPLACE: dense Q8_0 matrices held only as planes (native_mmvq.cu).  `native_q8_0_planes` says whether `weights`
++/// is one and gives its planes: the prompt path's dequantization cannot read GGUF blocks from it.
++bool native_q8_0_inplace_on();
++bool native_q8_0_inplace_fits(int n_in, int n_out, const void* weights);
++void native_q8_0_register_in_place(void* weights, int n_in, int n_out);
++bool native_q8_0_planes(const void* weights, const void** qs, const void** d);
+ void native_q8_0_sm60_release(const void* weights);
+ 
+ /// STRATA_Q6_PACKED=1 (opt-in): a packed copy of a Q6_K matrix (the output heads) - the same bytes as ql / qh /
+diff --git a/src/core/mtp.cpp b/src/core/mtp.cpp
+index 5403cdc..ed54cab 100644
+--- a/src/core/mtp.cpp
++++ b/src/core/mtp.cpp
+@@ -836,6 +836,11 @@ bool MtpDrafter::bind(const WeightTable& wt, const NativeHead* head, const float
+                 strata::kernels::gather_rows((const uint8_t*) head->weights(), row_bytes, dvocab_, n_dvocab_, dhead_, nullptr);
+             }
+             cudaDeviceSynchronize();
++            // STRATA_Q8_INPLACE: that was the last read of the main head's GGUF blocks, so its planes can take their bytes
++            if (head->type() == GGML_Q8_0 && strata::kernels::native_q8_0_inplace_on() &&
++                strata::kernels::native_q8_0_sm60_pack_in_place(const_cast<void*>(head->weights()), (int) g_->n_embd, (int) n_vocab_,
++                                                                "output head"))
++                std::fprintf(stderr, "strata mtp: the output head packed in place (STRATA_Q8_INPLACE)\n");
+             vram_ += (uint64_t) (n_dvocab_ * row_bytes) + raw.size();
+             std::fprintf(stderr, "strata mtp: draft head over %lld tokens (%.1f MiB)\n", (long long) n_dvocab_,
+                          (double) (n_dvocab_ * row_bytes) / 1048576.0);
+diff --git a/src/core/native_dense.cpp b/src/core/native_dense.cpp
+index 160f7ce..be47585 100644
+--- a/src/core/native_dense.cpp
++++ b/src/core/native_dense.cpp
+@@ -181,6 +181,7 @@ struct Pending {
+     uint64_t bytes;
+     DevicePtr data;
+     DevicePtr packed;   // STRATA_Q8_PACKED=1 copy, or null
++    bool planes = false;   // STRATA_Q8_INPLACE: `data` holds the planes
+ };
+ }
+ 
+@@ -397,7 +398,14 @@ bool NativeDense::load(const std::vector<std::string>& shards, WeightTable& tabl
+                 void* allocation = nullptr;
+                 auto status = cudaMalloc(&allocation, bytes);
+                 DevicePtr data(allocation);
+-                if (status == cudaSuccess)
++                // STRATA_Q8_INPLACE: the planes in this allocation, no GGUF copy beside them
++                const bool planes = status == cudaSuccess && tensor.type == 8 && tensor.name != "blk.1.ple_key.weight" &&
++                                    strata::kernels::native_q8_0_inplace_fits((int) ref.ne0, (int) ref.ne1, allocation);
++                if (planes) {
++                    std::vector<uint8_t> host(bytes);
++                    strata::kernels::native_q8_0_pack_host(gguf.tensor_data(tensor), host.data(), (int) ref.ne0, (int) ref.ne1);
++                    status = cudaMemcpy(data.get(), host.data(), bytes, cudaMemcpyHostToDevice);
++                } else if (status == cudaSuccess)
+                     status = cudaMemcpy(data.get(), gguf.tensor_data(tensor), bytes, cudaMemcpyHostToDevice);
+                 if (status != cudaSuccess) {
+                     err = "native dense upload " + tensor.name + ": " + cudaGetErrorString(status); return false;
+@@ -408,7 +416,7 @@ bool NativeDense::load(const std::vector<std::string>& shards, WeightTable& tabl
+                 // STRATA_Q8_PACKED=1: a second, packed copy of an eligible Q8_0 matrix for the decode MMVQ (the GGUF
+                 // copy stays: the prompt path's GEMMs read it).
+                 DevicePtr packed;
+-                if (tensor.type == 8 && tensor.name != "blk.1.ple_key.weight" &&   // the PLE has its own kernel
++                if (!planes && tensor.type == 8 && tensor.name != "blk.1.ple_key.weight" &&   // the PLE has its own kernel
+                     strata::kernels::native_q8_0_packed_enabled() &&
+                     strata::kernels::native_q8_0_packed_eligible((int) ref.ne0, (int) ref.ne1)) {
+                     std::vector<uint8_t> host(bytes);
+@@ -424,7 +432,7 @@ bool NativeDense::load(const std::vector<std::string>& shards, WeightTable& tabl
+                         return false;
+                     }
+                 }
+-                pending.push_back(Pending{&ref, (int) tensor.type, bytes, std::move(data), std::move(packed)});
++                pending.push_back(Pending{&ref, (int) tensor.type, bytes, std::move(data), std::move(packed), planes});
+             }
+             if (hc_q8_env())
+                 for (const auto& tensor : gguf.tensors()) {
+@@ -517,11 +525,16 @@ bool NativeDense::load(const std::vector<std::string>& shards, WeightTable& tabl
+         // All checks and allocations finish before publishing any reference.
+         weights_.reserve(pending.size());
+         uint64_t packed_bytes = 0;
+-        size_t packed_count = 0;
++        size_t packed_count = 0, planes_count = 0;
+         for (auto& item : pending) {
+             item.ref->native_data = item.data.get();
+             item.ref->native_type = item.type;
+             item.ref->native_q8_1 = scratch.get();
++            if (item.planes) {
++                strata::kernels::native_q8_0_register_in_place(item.data.get(), (int) item.ref->ne0, (int) item.ref->ne1);
++                packed_keys_.push_back(item.data.get());
++                ++planes_count;
++            }
+             if (item.packed) {
+                 strata::kernels::native_q8_0_packed_register(item.data.get(), item.packed.get(), (int) item.ref->ne0,
+                                                              (int) item.ref->ne1);
+@@ -532,6 +545,8 @@ bool NativeDense::load(const std::vector<std::string>& shards, WeightTable& tabl
+             }
+             weights_.push_back(item.data.release());
+         }
++        if (planes_count)
++            std::fprintf(stderr, "native dense: STRATA_Q8_INPLACE: %zu Q8_0 matrices held as planes only\n", planes_count);
+         if (packed_count)
+             std::fprintf(stderr, "native dense: STRATA_Q8_PACKED=1 packed %zu Q8_0 matrices for decode (+%.1f MiB)\n",
+                          packed_count, packed_bytes / 1048576.0);
+diff --git a/src/core/native_head.cpp b/src/core/native_head.cpp
+index c701f6e..30200e4 100644
+--- a/src/core/native_head.cpp
++++ b/src/core/native_head.cpp
+@@ -105,7 +105,9 @@ bool NativeHead::load(const std::vector<std::string>& shards, int64_t n_in, int6
+         type_ = (int) tensor->type;
+         if (type_ == 14 && strata::kernels::native_q6_k_packed_enabled())   // STRATA_Q6_PACKED=1
+             strata::kernels::native_q6_k_pack(weights_, n_in_, n_out_, "output head");
+-        if (type_ == 8)   // STRATA_Q8_SM60=1 (a no-op otherwise); the MTP draft head reads the same matrix
++        // STRATA_Q8_SM60=1 (a no-op otherwise).  With STRATA_Q8_INPLACE the head stays in GGUF blocks until the MTP draft
++        // head has gathered its rows from them (mtp.cpp packs it in place there); without a drafter it runs the exact kernels.
++        if (type_ == 8 && !strata::kernels::native_q8_0_inplace_on())
+             strata::kernels::native_q8_0_sm60_pack(weights_, n_in_, n_out_, "output head");
+         return true;
+     } catch (const std::exception& error) {
+diff --git a/src/kernels/cuda/dequant_bf16.cu b/src/kernels/cuda/dequant_bf16.cu
+index 9764fe9..93dea21 100644
+--- a/src/kernels/cuda/dequant_bf16.cu
++++ b/src/kernels/cuda/dequant_bf16.cu
+@@ -5,6 +5,7 @@
+ #include "strata/kernels/dequant_bf16.hpp"
+ #include "strata/core/tc_sm75.hpp"
+ #include "strata/kernels/iq_kernels.hpp"
++#include "strata/kernels/native_mmvq.hpp"
+ #include "strata/core/defaults_026.hpp"
+ #include "strata/core/sm120_series.hpp"
+ 
+@@ -327,6 +328,28 @@ __global__ void dequant_q8_0_kernel(const uint8_t* __restrict__ blocks, int64_t
+     for (int k = 0; k < (int) (8 * sizeof(T) / 16); ++k) o[k] = ((const uint4*) v)[k];
+ }
+ 
++// dequant_q8_0_kernel on a matrix held as planes (STRATA_Q8_INPLACE): the same value per element, read from the qs and d
++// planes.  Eight bytes a thread are one aligned load here, where the blocks needed four 2-byte loads.
++template <typename T>
++__global__ void dequant_q8_planes_kernel(const uint8_t* __restrict__ qs, const uint8_t* __restrict__ dpl, int64_t cols, int64_t row0,
++                                         int64_t rows, int64_t groups_per_row, T* __restrict__ out) {
++    const int64_t i = (int64_t) blockIdx.x * blockDim.x + threadIdx.x;
++    if (i >= rows * groups_per_row * 4) return;
++    const int64_t g = i >> 2, r = g / groups_per_row, gi = g % groups_per_row;
++    const int piece = (int) (i & 3);
++    const float d = h2f(dpl + ((row0 + r) * groups_per_row + gi) * 2);
++    const uint2 q = *(const uint2*) (qs + (row0 + r) * cols + gi * 32 + 8 * piece);
++    __align__(16) T v[8];
++#pragma unroll
++    for (int k = 0; k < 4; ++k) {
++        put(v, k, (float) (int8_t) (q.x >> (8 * k)) * d);
++        put(v, 4 + k, (float) (int8_t) (q.y >> (8 * k)) * d);
++    }
++    uint4* o = (uint4*) (out + g * 32 + 8 * piece);
++#pragma unroll
++    for (int k = 0; k < (int) (8 * sizeof(T) / 16); ++k) o[k] = ((const uint4*) v)[k];
++}
++
+ bool geometry(int type, int& block_elems, int& block_bytes) {
+     switch (type) {
+     case 2: block_elems = 32; block_bytes = 18; return true;
+@@ -358,6 +381,21 @@ void launch(int type, const void* blocks, int64_t row0, int64_t rows, int64_t co
+     const unsigned grid = (unsigned) ((total + 255) / 256);
+     const uint8_t* p = (const uint8_t*) blocks;
+     cudaStream_t st = (cudaStream_t) stream;
++    if (type == 8) {
++        const void* qs = nullptr;
++        const void* dpl = nullptr;
++        if (native_q8_0_planes(blocks, &qs, &dpl)) {
++            if (ld != cols || (reinterpret_cast<uintptr_t>(out) & 15) != 0) {
++                std::fprintf(stderr, "dequant: a planes matrix needs contiguous aligned output\n");
++                std::exit(1);
++            }
++            dequant_q8_planes_kernel<T><<<(unsigned) ((4 * total + 255) / 256), 256, 0, st>>>((const uint8_t*) qs, (const uint8_t*) dpl, cols,
++                                                                                               row0, rows, gpr, out);
++            const cudaError_t e = cudaGetLastError();
++            if (e != cudaSuccess) { std::fprintf(stderr, "dequant launch: %s\n", cudaGetErrorString(e)); std::exit(1); }
++            return;
++        }
++    }
+     if (type == 8 && ld == cols && (reinterpret_cast<uintptr_t>(blocks) & 1) == 0 &&
+         (reinterpret_cast<uintptr_t>(out) & 15) == 0) {   // contiguous rows only (the kernel writes out + g * 32)
+         dequant_q8_0_kernel<T><<<(unsigned) ((4 * total + 255) / 256), 256, 0, st>>>(p, row_bytes, row0, rows, gpr, out);
+diff --git a/src/kernels/cuda/native_mmvq.cu b/src/kernels/cuda/native_mmvq.cu
+index 40058e4..e9901cf 100644
+--- a/src/kernels/cuda/native_mmvq.cu
++++ b/src/kernels/cuda/native_mmvq.cu
+@@ -2617,8 +2617,9 @@ bool q8_packed_mmvq(const void* weights, const void* x_q8_1, float* y, int n_in,
+             // (the kernel takes at most q8sm60::MAX_COLS columns; a 9..16-row window is run in passes, each column bitwise
+             // the one-column result, as native_mmvq does for more than MAX_NCOLS)
+             bool all = true;
+-            for (int j = 0; all && j < ncols; j += q8sm60::MAX_COLS) {
+-                const int nj = ncols - j < q8sm60::MAX_COLS ? ncols - j : q8sm60::MAX_COLS;
++            const int maxc = q8sm60::max_cols(n_in);
++            for (int j = 0; all && j < ncols; j += maxc) {
++                const int nj = ncols - j < maxc ? ncols - j : maxc;
+                 all = q8sm60::launch(found->second.qs, found->second.d,
+                                      static_cast<const Q81Block*>(x_q8_1) + std::size_t(j) * std::size_t(n_in / Q8K),
+                                      y + std::size_t(j) * std::size_t(n_out), n_in, n_out, nj, static_cast<cudaStream_t>(stream));
+@@ -2921,7 +2922,7 @@ bool native_q8_0_sm60_pack_in_place(void* weights, int n_in, int n_out, const ch
+     if (q8_packed_registry().count(weights)) return true;
+     // The GGUF blocks are gone afterwards, so only where q8_packed_mmvq can never fall back to the GGUF-layout kernels
+     // (every column count fits the kernel's shared-memory planes) and its 16-byte weight loads stay aligned
+-    if (q8sm60::smem_bytes(q8sm60::MAX_COLS, n_in) > q8sm60::MAX_SMEM || reinterpret_cast<std::uintptr_t>(weights) % 16 != 0)
++    if (q8sm60::smem_bytes(1, n_in) > q8sm60::MAX_SMEM || reinterpret_cast<std::uintptr_t>(weights) % 16 != 0)
+         return native_q8_0_sm60_pack(weights, n_in, n_out, what);
+     const std::size_t bytes = std::size_t(n_in / 32) * std::size_t(n_out) * 34;   // both layouts: 34 bytes per 32
+     std::vector<uint8_t> blocks(bytes), planes(bytes);
+@@ -2946,6 +2947,40 @@ bool native_q8_0_sm60_pack_in_place(void* weights, int n_in, int n_out, const ch
+ #endif
+ }
+ 
++// STRATA_Q8_INPLACE (on with STRATA_Q8_SM60 unless =0): a dense Q8_0 matrix is uploaded as its planes, in the bytes the GGUF
++// blocks would take, instead of the blocks plus a packed copy: 2.9 GiB of VRAM on Flash-Next, about 2,300 expert slots.
++// The one other reader of those blocks is the prompt path's dequantization, which takes the planes (dequant_bf16.cu).
++bool native_q8_0_inplace_on() {
++#if defined(__HIPCC__)
++    return false;
++#else
++    static const bool on = [] { const char* v = std::getenv("STRATA_Q8_INPLACE"); return q8_sm60_on() && (v == nullptr || v[0] != '0'); }();
++    return on;
++#endif
++}
++bool native_q8_0_inplace_fits(int n_in, int n_out, const void* weights) {
++#if defined(__HIPCC__)
++    (void) n_in; (void) n_out; (void) weights;
++    return false;
++#else
++    return native_q8_0_inplace_on() && native_q8_0_packed_eligible(n_in, n_out) &&
++           q8sm60::smem_bytes(1, n_in) <= q8sm60::MAX_SMEM && reinterpret_cast<std::uintptr_t>(weights) % 16 == 0;
++#endif
++}
++void native_q8_0_register_in_place(void* weights, int n_in, int n_out) {
++    native_q8_0_packed_register(weights, weights, n_in, n_out);
++    q8_sm60_owned()[weights] = nullptr;
++}
++bool native_q8_0_planes(const void* weights, const void** qs, const void** d) {
++    const auto owned = q8_sm60_owned().find(weights);
++    if (owned == q8_sm60_owned().end() || owned->second != nullptr) return false;
++    const auto found = q8_packed_registry().find(weights);
++    if (found == q8_packed_registry().end()) return false;
++    *qs = found->second.qs;
++    *d = found->second.d;
++    return true;
++}
++
+ bool native_q6_k_packed_enabled() {
+     static const bool enabled = [] {
+         const char* v = std::getenv("STRATA_Q6_PACKED");
+diff --git a/src/kernels/cuda/q8_sm60.cuh b/src/kernels/cuda/q8_sm60.cuh
+index ef1d9fd..0398e4a 100644
+--- a/src/kernels/cuda/q8_sm60.cuh
++++ b/src/kernels/cuda/q8_sm60.cuh
+@@ -28,6 +28,13 @@ inline std::size_t smem_bytes(int ncols, int n_in) {
+     return std::size_t(ncols) * std::size_t(n_in) + std::size_t(ncols) * std::size_t(n_in / 32) * sizeof(float);
+ }
+ 
++// the most columns of an n_in-wide matrix one launch holds in shared memory (6144 -> 7; a window beyond it runs in passes)
++inline int max_cols(int n_in) {
++    int c = MAX_COLS;
++    while (c > 1 && smem_bytes(c, n_in) > MAX_SMEM) --c;
++    return c;
++}
++
+ template<int NCOLS, int TPR>
+ __launch_bounds__(THREADS)
+ __global__ void kernel(const int8_t* __restrict__ qs, const half* __restrict__ dpl, const Q81Block* __restrict__ x,
+-- 
+2.43.0
+

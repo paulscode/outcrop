@@ -1,0 +1,24 @@
+data: {"id": "chatcmpl-77ac603fe8a64f68b16268be", "object": "chat.completion.chunk", "created": 1794018977, "model": "qwen3.8-flash-next", "choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}, "finish_reason": null}]}
+
+: keep-alive
+
+: keep-alive
+
+data: {"id": "chatcmpl-77ac603fe8a64f68b16268be", "object": "chat.completion.chunk", "created": 1794018977, "model": "qwen3.8-flash-next", "choices": [{"index": 0, "delta": {"content": "Hello"}, "finish_reason": null}]}
+
+data: {"id": "chatcmpl-77ac603fe8a64f68b16268be", "object": "chat.completion.chunk", "created": 1794018977, "model": "qwen3.8-flash-next", "choices": [{"index": 0, "delta": {"content": " there"}, "finish_reason": null}]}
+
+data: {"id": "chatcmpl-77ac603fe8a64f68b16268be", "object": "chat.completion.chunk", "created": 1794018977, "model": "qwen3.8-flash-next", "choices": [{"index": 0, "delta": {"content": ","}, "finish_reason": null}]}
+
+data: {"id": "chatcmpl-77ac603fe8a64f68b16268be", "object": "chat.completion.chunk", "created": 1794018977, "model": "qwen3.8-flash-next", "choices": [{"index": 0, "delta": {"content": " how"}, "finish_reason": null}]}
+
+data: {"id": "chatcmpl-77ac603fe8a64f68b16268be", "object": "chat.completion.chunk", "created": 1794018977, "model": "qwen3.8-flash-next", "choices": [{"index": 0, "delta": {"content": " are"}, "finish_reason": null}]}
+
+data: {"id": "chatcmpl-77ac603fe8a64f68b16268be", "object": "chat.completion.chunk", "created": 1794018977, "model": "qwen3.8-flash-next", "choices": [{"index": 0, "delta": {"content": " you"}, "finish_reason": null}]}
+
+data: {"id": "chatcmpl-77ac603fe8a64f68b16268be", "object": "chat.completion.chunk", "created": 1794018977, "model": "qwen3.8-flash-next", "choices": [{"index": 0, "delta": {"content": "?"}, "finish_reason": null}]}
+
+data: {"id": "chatcmpl-77ac603fe8a64f68b16268be", "object": "chat.completion.chunk", "created": 1794018977, "model": "qwen3.8-flash-next", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 18, "completion_tokens": 8, "total_tokens": 26, "prompt_tokens_details": {"cached_tokens": 0}}, "timings": {"cache_n": 0, "prompt_n": 18, "prompt_ms": 393.7, "prompt_per_token_ms": 21.872, "prompt_per_second": 45.7, "predicted_n": 8, "predicted_ms": 314.7, "predicted_per_token_ms": 39.337, "predicted_per_second": 25.4, "draft_n": 7, "draft_n_accepted": 3}}
+
+data: [DONE]
+

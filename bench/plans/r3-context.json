@@ -1,0 +1,6 @@
+{"base": "quality", "cases": "chat,code,story,doc4k,doc16k", "repeat": 3, "tokens": 256, "rounds": 1,
+ "arms": [
+  {"name": "128k", "context": 131072, "env": {"STRATA_DECODE_TIMING": "1"}},
+  {"name": "256k", "context": 262144, "env": {"STRATA_DECODE_TIMING": "1"}},
+  {"name": "1m-yarn4", "context": 1048576, "rope": {"scaling": "yarn", "scale": 4}, "env": {"STRATA_DECODE_TIMING": "1"}}
+ ]}

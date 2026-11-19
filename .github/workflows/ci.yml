@@ -1,0 +1,111 @@
+# CI for every push to main and every pull request: the Python tests (gateway, console, fake Strata), dependency audits, the UI's
+# type check, unit tests and build, and Playwright against the whole stack running on the fake Strata.  No GPU is needed.
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: uv sync --project console --frozen
+      - name: Tests
+        run: uv run --project console pytest console/tests -q
+      - name: Lint
+        run: uv run --project console ruff check console/outcrop console/tests lib --select E,F,W,B --ignore E501,E701,E702,B008,B905
+      - name: Audit Python dependencies
+        run: uv run --project console pip-audit --progress-spinner off
+      - name: The page fetcher in its own environment (only the "fetch" group, as setup/install-web.sh installs it)
+        run: |
+          uv export --project console --frozen --only-group fetch --no-emit-project --quiet -o /tmp/fetch-req.txt
+          python3 -m venv /tmp/fetch-venv
+          /tmp/fetch-venv/bin/pip install --quiet --require-hashes -r /tmp/fetch-req.txt
+          # laid out as install-web.sh does in /opt/outcrop-fetch/app: only outcrop/__init__.py and the fetcher, python -I
+          mkdir -p /tmp/fetch-app/outcrop && cp console/outcrop/__init__.py /tmp/fetch-app/outcrop/ && cp -r console/outcrop/fetcher /tmp/fetch-app/outcrop/
+          /tmp/fetch-venv/bin/python -I -c "import sys; sys.path.insert(0, '/tmp/fetch-app'); import trafilatura, pypdf, outcrop.fetcher.__main__, outcrop.fetcher.fetch as f; f.readable(b'<html><title>t</title><body><p>hello</p></body></html>', 'text/html', 'utf-8'); print('fetcher ok in its own environment')"
+      - name: Shell scripts
+        run: |
+          for f in setup.sh setup/*.sh setup/outcrop-boot bin/outcrop-gateway bin/outcrop-console bench/validate.sh examples/bug-hunt/harness/*.sh examples/bug-hunt/coldcard/*.sh; do bash -n "$f"; done
+          shellcheck -S warning setup.sh setup/*.sh setup/outcrop-boot bin/outcrop-gateway bin/outcrop-console bench/validate.sh examples/bug-hunt/harness/*.sh examples/bug-hunt/coldcard/*.sh
+
+  web:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: corepack enable
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Type check
+        run: pnpm typecheck
+      - name: Unit tests
+        run: pnpm test
+      - name: Build
+        run: pnpm build
+      - name: Audit (production dependencies, high and critical)
+        run: pnpm audit --prod --audit-level high
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+          retention-days: 7
+
+  e2e:
+    needs: [python, web]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: corepack enable
+      - name: Install
+        run: |
+          uv sync --project console --frozen
+          cd web && pnpm install --frozen-lockfile && pnpm exec playwright install --with-deps chromium
+      - name: Build the UI
+        run: cd web && pnpm build
+      - name: Start the stack on the fake Strata
+        run: |
+          (cd console && uv run python dev.py --fresh > /tmp/dev.log 2>&1 &)
+          # the step runs with bash -e: a refused connection must not end it, so the check goes in an `if`
+          for i in $(seq 90); do
+            if curl -s -o /dev/null http://localhost:8800/api/auth/session; then echo "up after ${i} s"; break; fi
+            sleep 1
+          done
+          curl -s -o /dev/null -w "console: %{http_code}\n" http://localhost:8800/api/auth/session
+      - name: Playwright
+        run: cd web && pnpm e2e
+      - if: failure()
+        run: tail -n 150 /tmp/dev.log /tmp/outcrop-dev/*.log || true
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            web/playwright-report
+            web/test-results
+          retention-days: 7

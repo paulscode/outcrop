@@ -1,0 +1,13 @@
+# The engine's logs in @OUTCROP_HOME@/logs (installed as /etc/logrotate.d/outcrop by setup/install-console.sh).
+# copytruncate: the engine keeps its file open; the console's log view notices the truncation and starts over.
+@OUTCROP_HOME@/logs/*.log {
+    su @USER@ @USER@
+    weekly
+    maxsize 50M
+    rotate 4
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}

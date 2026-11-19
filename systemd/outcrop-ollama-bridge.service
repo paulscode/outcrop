@@ -1,0 +1,26 @@
+# Ollama's API for apps that speak only Ollama, answered by the Strata server.  Behind the API gateway it listens on
+# 127.0.0.1:11435 and the gateway owns port 11434; without the gateway (or during `outcrop gateway bypass`) it listens on the LAN
+# at 11434 itself.  `--auto` reads which from presets.json.
+[Unit]
+Description=Ollama API bridge to the Strata LLM server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+Environment=OUTCROP_HOME=@OUTCROP_HOME@
+ExecStart=@PROJECT@/bin/outcrop-ollama-bridge --auto
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+# the service user may be in the docker group (build-ui.sh): the socket would be root to anyone who took over this service
+InaccessiblePaths=-/run/docker.sock -/var/run/docker.sock
+# home-directory secrets (SSH keys, a GitHub login...): none of these services needs them
+InaccessiblePaths=-@HOME@/.ssh -@HOME@/.gnupg -@HOME@/.config/gh -@HOME@/.docker -@HOME@/.git-credentials -@HOME@/.bash_history -@HOME@/.netrc -@HOME@/.local/share/keyrings
+ProtectHome=read-only
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

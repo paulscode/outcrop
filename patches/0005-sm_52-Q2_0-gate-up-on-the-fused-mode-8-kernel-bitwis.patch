@@ -1,0 +1,52 @@
+From 9ed1943174bcd9aba2925292dca340ddb344ef7c Mon Sep 17 00:00:00 2001
+From: Outcrop <outcrop@localhost>
+Date: Sat, 31 Oct 2026 17:22:31 -0500
+Subject: [PATCH 5/6] sm_52: Q2_0 gate/up on the fused mode 8 kernel (bitwise,
+ 26-31% faster experts on an M6000)
+
+---
+ src/kernels/cuda/iq_kernels.cu | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/src/kernels/cuda/iq_kernels.cu b/src/kernels/cuda/iq_kernels.cu
+index 3053183..85f4cab 100644
+--- a/src/kernels/cuda/iq_kernels.cu
++++ b/src/kernels/cuda/iq_kernels.cu
+@@ -5744,6 +5744,7 @@ template<> struct GridOf<22> { using T = uint64_t; static constexpr int N = 1024
+ template<> struct GridOf<16> { using T = uint64_t; static constexpr int N = 256; __device__ static const T* src() { return iq2xxs_grid; } };
+ template<> struct GridOf<18> { using T = uint32_t; static constexpr int N = 256; __device__ static const T* src() { return iq3xxs_grid; } };
+ template<> struct GridOf<21> { using T = uint32_t; static constexpr int N = 512; __device__ static const T* src() { return iq3s_grid; } };
++template<> struct GridOf<42> { using T = uint32_t; static constexpr int N = 1; __device__ static const T* src() { return iq3s_grid; } };   // Q2_0 has no grid
+ template<> struct GridOf<23> { using T = uint32_t; static constexpr int N = 1; __device__ static const T* src() { return iq3s_grid; } };   // IQ4_XS: no grid
+ 
+ // SG = 1 (mode 6): the signs without byte-SIMD ops, which gfx906 lacks (strata_vcmpne4 / strata_vsub4 unpack to
+@@ -5888,6 +5889,9 @@ template<int SG> struct DotG<16, SG> { __device__ static __forceinline__ float f
+     return d * sumi;
+ } };
+ 
++template<int SG> struct DotG<42, SG> { __device__ static __forceinline__ float f(const void* vbq, const block_q8_1* bq8_1, int kbx, int iqs,
++                                                      const uint32_t*) { return vec_dot_q2_0_q8_1(vbq, bq8_1, kbx, iqs); } };
++
+ template<int SG> struct DotG<23, SG> { __device__ static __forceinline__ float f(const void* vbq, const block_q8_1* bq8_1, int kbx, int iqs,
+                                                       const uint32_t*) { return vec_dot_iq4_xs_q8_1(vbq, bq8_1, kbx, iqs); } };
+ 
+@@ -6361,7 +6365,7 @@ void native_expert_grouped(const NativeExpertLayout& L, const unsigned long long
+ #endif
+ #endif
+ #if STRATA_EXP_LAYOUTS
+-    const bool fused_gu = !nib_layout(L) && em0 == 8 && ((kExpLds16 && L.gu_type == 16) || L.gu_type == 18 || L.gu_type == 21 || L.gu_type == 22 || L.gu_type == 23) &&
++    const bool fused_gu = !nib_layout(L) && em0 == 8 && ((kExpLds16 && L.gu_type == 16) || L.gu_type == 18 || L.gu_type == 21 || L.gu_type == 22 || L.gu_type == 23 || L.gu_type == 42) &&
+                           L.n_ff % 32 == 0;
+     if (fused_gu && g_exp_phase != 2) {
+         const dim3 gl((unsigned) (L.n_ff / 32), (unsigned) cap_groups);
+@@ -6371,6 +6375,7 @@ void native_expert_grouped(const NativeExpertLayout& L, const unsigned long long
+             case 18: native_gu_fused_kernel<18><<<gl, 256, sh, s>>>(grp_ptr, grp_start, n_groups, ent_tok, X, L, hq); break;
+             case 21: native_gu_fused_kernel<21><<<gl, 256, sh, s>>>(grp_ptr, grp_start, n_groups, ent_tok, X, L, hq); break;
+             case 23: native_gu_fused_kernel<23><<<gl, 256, sh, s>>>(grp_ptr, grp_start, n_groups, ent_tok, X, L, hq); break;
++            case 42: native_gu_fused_kernel<42><<<gl, 256, sh, s>>>(grp_ptr, grp_start, n_groups, ent_tok, X, L, hq); break;
+             default: native_gu_fused_kernel<22><<<gl, 256, sh, s>>>(grp_ptr, grp_start, n_groups, ent_tok, X, L, hq); break;
+         }
+         check("native_expert_grouped/gu fused");
+-- 
+2.43.0
+

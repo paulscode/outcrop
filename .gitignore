@@ -1,0 +1,53 @@
+# Credentials never belong here.  An API key goes in ~/.outcrop/state/api_key (outside this repo), not in presets.json.
+.env
+.env.*
+.netrc
+*.pem
+*.key
+api_key
+hf-token.txt
+id_rsa*
+id_ed25519*
+
+# Model weights, toolkits and engine binaries stay in ~/.outcrop.  setup/ fetches and builds them from pinned sources.
+*.gguf
+*.safetensors
+*.bin
+*.run
+*.tar.gz
+*.zip
+
+# Generated
+__pycache__/
+*.pyc
+.venv/
+build/
+*.nsys-rep
+*.sqlite
+# benchmark output: written by bench/*.py and imported by the console's Lab
+bench/results/*
+!bench/results/.gitkeep
+
+.vscode/
+.idea/
+
+# The console's state, environment and build output (state lives in ~/.outcrop/state, never here)
+*.db
+*.db-wal
+*.db-shm
+state/
+console/.venv/
+console/.pytest_cache/
+console/.ruff_cache/
+web/node_modules/
+web/dist/
+web/test-results/
+web/playwright-report/
+web/.pnpm-store/
+
+# private notes, not published
+internal_docs/
+# machine-specific: made from a hardware profile (profiles/) into $OUTCROP_HOME, never kept here
+/presets.json
+# screenshots from web/scripts/shot.mjs
+web/shots/

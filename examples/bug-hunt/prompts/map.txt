@@ -1,0 +1,3 @@
+This repository is {ABOUT}. I'm planning a security review and want to split it into parts. Map its security-critical subsystems: for each one, what it protects, its entry points, its key files (including the C code it depends on), and what an attacker would want from it. Don't review them for bugs yet, and don't change any files.
+
+End your answer with a section headed exactly "## Subsystems" that has one line per subsystem, in the form "- <name>: <one sentence on what it covers>".

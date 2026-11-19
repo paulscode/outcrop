@@ -1,0 +1,273 @@
+"""Presets for the Strata server on this machine: load presets.json and render a preset into a Strata run config.
+
+A preset names a model pack and the settings tuned for it (context, KV cache, drafting, engine switches).  `render()` turns it
+into the JSON config that Strata's serve/server.py reads (`--config`), at $OUTCROP_HOME/cfg/<preset>.json.
+
+Paths: $OUTCROP_HOME (default ~/.outcrop) holds presets.json (made from a hardware profile in profiles/), sources, models,
+packs, configs and logs.
+"""
+import json
+import os
+import re
+from pathlib import Path
+
+PROJECT = Path(__file__).resolve().parent.parent
+OUTCROP_HOME = Path(os.environ.get("OUTCROP_HOME") or Path.home() / ".outcrop")
+PRESETS_FILE = Path(os.environ.get("OUTCROP_PRESETS") or OUTCROP_HOME / "presets.json")
+STRATA = OUTCROP_HOME / "src" / "Strata"
+CUDA_LIB = "/usr/local/cuda-12.9/lib64"
+
+# The GSQ-RCO pack files.  Shard 1 holds the model; shard 2 is the 28.8 GB n-gram table every pack shares.
+SHARD = "Qwen3.8-Flash-Next-GSQ-RCO-{Q}-{n:05d}-of-00002.gguf"
+# Free RAM (GiB) the engine needs to pin every routed expert in RAM ("full" arena); below it the engine keeps the most used experts
+# in RAM and reads the rest from the model file ("resident").  From the M6000 exploration's 64 GB measurements, with margin.
+FULL_ARENA_GIB = {"q2_0": 42, "iq2_xs": 44, "iq3_xxs": 50, "iq3_s": 57}
+
+
+def load() -> dict:
+    try:
+        with open(PRESETS_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        raise SystemExit(f"no {PRESETS_FILE} yet: run ./setup.sh in the Outcrop folder, or `outcrop profile apply NAME` "
+                         "(`outcrop profile detect` suggests one)") from None
+
+
+STATE = Path(os.environ.get("OUTCROP_STATE") or OUTCROP_HOME / "state")     # as console/outcrop/common/config.py
+BYPASS_FILE = STATE / "bypass.json"
+UPSTREAM_KEY_FILE = STATE / "upstream_key"
+
+
+def bypass() -> dict | None:
+    """`outcrop gateway bypass` in force: Strata itself serves the LAN, with the emergency keys in this file."""
+    try:
+        b = json.loads(BYPASS_FILE.read_text(encoding="utf-8"))
+        return b if isinstance(b, dict) and b.get("keys") else None
+    except (OSError, ValueError):
+        return None
+
+
+def gateway_mode(cfg: dict) -> bool:
+    """The API gateway (outcrop-gateway) answers the LAN, and Strata listens on loopback behind it."""
+    return bool(cfg.get("gateway", {}).get("enabled")) and bypass() is None
+
+
+def upstream_key() -> str:
+    """The internal key Strata requires behind the gateway; only the gateway and the console send it."""
+    try:
+        k = UPSTREAM_KEY_FILE.read_text(encoding="utf-8").strip()
+        if k:
+            return k
+    except OSError:
+        pass
+    import secrets
+    STATE.mkdir(parents=True, exist_ok=True)
+    os.chmod(STATE, 0o700)
+    k = "strata-internal-" + secrets.token_urlsafe(32)
+    fd = os.open(UPSTREAM_KEY_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(k + "\n")
+    return k
+
+
+def bind(cfg: dict) -> tuple[str, int]:
+    """Where Strata listens: loopback behind the gateway, or the LAN address and port 8080 without it (or in a bypass)."""
+    s, g = cfg.get("server", {}), cfg.get("gateway", {})
+    if s.get("private"):                 # bench/ab.py's own server on a private port
+        return str(s.get("host", "127.0.0.1")), int(s.get("port", 8095))
+    if bypass() is not None:
+        return str(g.get("bypass_listen", "0.0.0.0")), int(g.get("port", 8080))
+    return str(s.get("host", "0.0.0.0")), int(s.get("port", 8080))
+
+
+def api_key(cfg: dict):
+    """The key(s) Strata requires.  Behind the gateway: the internal key.  In a bypass: the emergency keys.  Without the
+    gateway: $OUTCROP_HOME/state/api_key if that file exists (keeps the secret out of the git repo), else presets.json's
+    server.api_key; "none" means no key is required."""
+    if cfg.get("server", {}).get("private"):
+        return cfg["server"].get("api_key") or "none"
+    b = bypass()
+    if b is not None:
+        return [str(k) for k in b["keys"]]
+    if gateway_mode(cfg):
+        return [upstream_key()]
+    f = STATE / "api_key"
+    try:
+        k = f.read_text(encoding="utf-8").strip()
+        if k:
+            return k
+    except OSError:
+        pass
+    return cfg.get("server", {}).get("api_key") or "none"
+
+
+def names(cfg: dict | None = None) -> list[str]:
+    return list((cfg or load())["presets"])
+
+
+def mem_available_gib() -> int:
+    for line in open("/proc/meminfo"):
+        if line.startswith("MemAvailable:"):
+            return int(line.split()[1]) // (1 << 20)
+    return 0
+
+
+def expand(x: str) -> str:
+    return x.replace("{outcrop_home}", str(OUTCROP_HOME)).replace("{strata}", str(STRATA))
+
+
+def engine_args(p: dict, top: dict) -> tuple[list[str], dict, list[str]]:
+    """The engine's command line, environment and notes for preset `p`."""
+    pack = p["pack"]
+    Q = pack.upper()
+    q8 = p.get("q8_dense", True)
+    mdir = OUTCROP_HOME / "models" / (f"{Q}-q8dense" if q8 else Q)
+    ctx = int(p["context"])
+    notes = []
+    args = ["--pack", str(OUTCROP_HOME / "data" / "packs" / pack),
+            "--native", str(mdir / SHARD.format(Q=Q, n=1)),
+            "--ple-gguf", str(mdir / SHARD.format(Q=Q, n=2)),
+            "--expert-profile", str(STRATA / "data" / "expert-profile.bin"),
+            "--expert-cache", str(p.get("expert_cache", "auto")),
+            "--prefill", str(p.get("prefill", "auto")),
+            "--max-context", str(ctx)]
+    if p.get("mtp", True):
+        args += ["--spec", str(p.get("spec", 4)), "--spec-min-p", str(p.get("spec_min_p", 0.5)),
+                 "--mtp", str(OUTCROP_HOME / "data" / "mtp" / "rt")]
+        if p.get("draft_vocab", "en") != "all":
+            args += ["--mtp-draft-vocab", str(STRATA / "data" / f"draft_vocab_{p.get('draft_vocab', 'en')}.bin")]
+    if ctx > 8192:
+        args += ["--kv", p.get("kv", "int8")]
+    kvr = p.get("kv_resident", 32768 if ctx >= 65536 else None)
+    if kvr:
+        args += ["--kv-resident", str(kvr)]
+    rope = p.get("rope")
+    if rope:
+        args += ["--rope-scaling", rope["scaling"], "--rope-scale", str(rope["scale"])]
+    # RAM mode: every expert pinned in RAM when there is room, else the most used ones (the engine reads the rest from the file).
+    need = FULL_ARENA_GIB.get(pack, 60)
+    free = mem_available_gib()
+    if p.get("ram_mode", "auto") == "resident" or (p.get("ram_mode", "auto") == "auto" and free < need):
+        args += ["--resident-experts"]
+        notes.append(f"low-RAM mode: {free} GiB available, {need} GiB needed to pin every expert")
+        resident = True
+    else:
+        resident = False
+    env = {**top.get("env", {}), **p.get("env", {})}
+    if resident:
+        # In low-RAM mode the prompt planner's short chunks cost 13% on a 16K prompt and saved almost no disk reads
+        # (measured with 32 GB of RAM). A preset can set it back.
+        env = {"STRATA_PREFILL_HOST_PLAN": "0", **env}
+    env = {k: v for k, v in env.items() if v is not None and k not in p.get("drop_env", [])}
+    for a in top.get("args", []) + p.get("args", []):
+        args += [expand(x) for x in (a.split() if isinstance(a, str) else [a])]
+    return args, {k: expand(str(v)) for k, v in env.items()}, notes
+
+
+# What a preset may hand the engine.  Checked here, where the engine's config is made, and not only in the console's
+# editor: presets.json is writable from inside the console's sandbox, so a console that was taken over must not be able
+# to run a program of its choosing, or load a library into the engine (LD_PRELOAD, CUDA_INJECTION64_PATH ...).
+ENGINE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+SAFE_ENV = re.compile(r"(STRATA_[A-Z0-9_]{1,60}|CUDA_VISIBLE_DEVICES|CUDA_DEVICE_ORDER|CUDA_MODULE_LOADING|OMP_NUM_THREADS|"
+                      r"OMP_PROC_BIND|OMP_PLACES|OMP_WAIT_POLICY|MKL_NUM_THREADS|OPENBLAS_NUM_THREADS)")
+SAFE_ARG = re.compile(r"(--?[a-z0-9][a-z0-9-]{0,48}(=[A-Za-z0-9._:,+-]{0,256})?|[A-Za-z0-9._:,+-]{1,256})")
+SAFE_VALUE = re.compile(r"[A-Za-z0-9._:,+=-]{0,256}")       # an environment value: no paths, no spaces
+
+
+def unsafe(cfg: dict, name: str) -> list[str]:
+    """Why preset `name` must not run (empty: it may).  The rules of the console's editor that guard what the engine runs
+    and where it listens (the editor checks more, for helpful messages)."""
+    p, top = cfg["presets"][name], cfg.get("common", {})
+    why = []
+    if p.get("pack") not in FULL_ARENA_GIB:
+        why.append(f"pack {p.get('pack')!r} is not one of {', '.join(sorted(FULL_ARENA_GIB))}")
+    if not re.fullmatch(r"[a-z0-9_]{1,16}", str(p.get("kv", "int8"))):
+        why.append(f"kv {p.get('kv')!r} is not allowed")
+    rope = p.get("rope")
+    if rope is not None and (not isinstance(rope, dict) or rope.get("scaling") not in ("yarn", "linear")
+                             or not isinstance(rope.get("scale"), (int, float))):
+        why.append("rope is {\"scaling\": \"yarn\"|\"linear\", \"scale\": a number}")
+    server = cfg.get("server") or {}
+    if (cfg.get("gateway") or {}).get("enabled"):
+        if server.get("private"):
+            why.append("server.private is for bench/ab.py's own server, not with the gateway enabled")
+        if str(server.get("host", "127.0.0.1")) not in ("127.0.0.1", "::1", "localhost"):
+            why.append("with the gateway enabled, Strata must listen on 127.0.0.1 only")
+    for k, v in {**top.get("env", {}), **p.get("env", {})}.items():
+        if v is not None and not SAFE_VALUE.fullmatch(str(v)):
+            why.append(f"the value of {k} is not allowed (letters, digits and . _ : , + = - only)")
+    eng = p.get("engine", cfg.get("engine", "strata"))
+    if not isinstance(eng, str) or not ENGINE_NAME.fullmatch(eng):
+        why.append(f"engine {eng!r} is not a file name in {OUTCROP_HOME / 'bin'}")
+    for k in {**top.get("env", {}), **p.get("env", {})}:
+        if not SAFE_ENV.fullmatch(str(k)):
+            why.append(f"the variable {k!r} is not allowed")
+    for a in top.get("args", []) + p.get("args", []):
+        for tok in (a.split() if isinstance(a, str) else [str(a)]):
+            if not SAFE_ARG.fullmatch(tok):
+                why.append(f"the engine argument {tok!r} is not allowed")
+    return why
+
+
+def render(name: str, cfg: dict | None = None) -> tuple[Path, list[str]]:
+    """Write $OUTCROP_HOME/cfg/<name>.json for preset `name`; returns its path and notes for the operator."""
+    cfg = cfg or load()
+    if name not in cfg["presets"]:
+        raise KeyError(f"unknown preset {name!r}: choose one of {', '.join(cfg['presets'])}")
+    bad = unsafe(cfg, name)
+    if bad:
+        raise ValueError(f"preset {name!r} refused: " + "; ".join(bad))
+    p = cfg["presets"][name]
+    server = cfg.get("server", {})
+    args, env, notes = engine_args(p, cfg.get("common", {}))
+    engine = OUTCROP_HOME / "bin" / p.get("engine", cfg.get("engine", "strata"))
+    model_id = server.get("model_id", "qwen3.8-flash-next")
+    run = {
+        "exe": str(engine), "args": args, "cwd": str(STRATA),
+        "tokenizer": str(OUTCROP_HOME / "data" / "packs" / p["pack"] / "tokenizer"),
+        "model_name": model_id,
+        # every preset answers to the stable id above; the alias says which preset runs (GET /v1/models lists both)
+        "aliases": [f"{model_id}:{name}"],
+        "arch": "qwen4exp",
+        "log": str(OUTCROP_HOME / "logs" / f"engine-{name}.log"),
+        "lib_dirs": [CUDA_LIB], "cuda": 12,
+        "host": bind(cfg)[0], "port": bind(cfg)[1],
+        "api_key": api_key(cfg),
+        "engine_ready_s": 1800,
+        "open_browser": False,
+    }
+    if env:
+        run["env"] = env
+    for k in ("parallel", "sampling", "reasoning_effort", "max_tokens", "allowed_hosts", "cors_origins", "trusted_origins",
+              "pool_cores", "threads", "idle_unload_s"):
+        v = p.get(k, server.get(k))
+        if v is not None:
+            run[k] = v
+    vision = p.get("vision", cfg.get("common", {}).get("vision", "cpu"))
+    mmproj = OUTCROP_HOME / "models" / "vision" / "mmproj-Qwen3.8-Flash-Next-BF16.gguf"
+    if vision != "off" and mmproj.exists() and (OUTCROP_HOME / "bin" / "strata-vision").exists():
+        run["args"] = run["args"] + ["--vision"]
+        v = cfg.get("common", {}).get("vision_cfg", {})
+        run["vision"] = {"exe": str(OUTCROP_HOME / "bin" / "strata-vision"), "mmproj": str(mmproj),
+                         "model": args[args.index("--native") + 1], "gpu": vision == "gpu",
+                         "max_tokens": int(v.get("max_tokens", 300)), "threads": min(int(v.get("threads", 16)), os.cpu_count() or 16)}
+    elif vision != "off":
+        notes.append("pictures off: the vision encoder or its model file is missing")
+    out = OUTCROP_HOME / "cfg" / f"{name}.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(out.parent, 0o700)
+    tmp = out.with_suffix(".tmp")
+    # it holds Strata's internal key: readable by its owner only
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(json.dumps(run, indent=2) + "\n")
+    os.chmod(tmp, 0o600)
+    tmp.replace(out)
+    return out, notes
+
+
+if __name__ == "__main__":
+    import sys
+    for n in sys.argv[1:] or names():
+        path, notes = render(n)
+        print(path, *notes, sep="\n  ")

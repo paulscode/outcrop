@@ -1,0 +1,63 @@
+# The API gateway: checks a token on every request to ports 8080 (OpenAI, Anthropic) and 11434 (Ollama) and passes it to
+# Strata on 127.0.0.1:18080 (or the Ollama bridge on 127.0.0.1:11435).  Control socket: /run/outcrop/gateway.sock.
+# It does not start during `outcrop gateway bypass` (Strata then serves the LAN itself).  Installed by setup/install-console.sh.
+[Unit]
+Description=LLM API gateway (tokens on ports 8080 and 11434)
+Documentation=file://@PROJECT@/docs/SECURITY.md
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=!@OUTCROP_HOME@/state/bypass.json
+
+[Service]
+Type=simple
+User=@USER@
+Group=@USER@
+Environment=OUTCROP_HOME=@OUTCROP_HOME@
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=@PROJECT@/bin/outcrop-gateway
+Restart=always
+RestartSec=2
+TimeoutStopSec=30
+RuntimeDirectory=outcrop
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
+UMask=0077
+LimitNOFILE=65536
+CPUWeight=500
+MemoryMax=2G
+TasksMax=256
+# Sandbox: a bug here must not become more than this user's API state.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+# the service user may be in the docker group (build-ui.sh): the socket would be root to anyone who took over this service
+InaccessiblePaths=-/run/docker.sock -/var/run/docker.sock
+# home-directory secrets (SSH keys, a GitHub login...): none of these services needs them
+InaccessiblePaths=-@HOME@/.ssh -@HOME@/.gnupg -@HOME@/.config/gh -@HOME@/.docker -@HOME@/.git-credentials -@HOME@/.bash_history -@HOME@/.netrc -@HOME@/.local/share/keyrings
+# the CA's private key: the gateway serves 8443 with the server's own key; it never signs
+InaccessiblePaths=-@OUTCROP_HOME@/state/tls/ca.key
+ProtectHome=read-only
+ReadWritePaths=@OUTCROP_HOME@/state
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+# AF_NETLINK: `hostname -I` (this server's addresses, the names accepted while the API is open)
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target
