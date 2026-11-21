@@ -129,11 +129,17 @@ def journal(unit: str, since: float | None = None, lines: int | None = None) -> 
         return []
 
 
-def follow_cmd(units: list[str], lines: int = 0, message_only: bool = False) -> list[str]:
-    """The command that follows units' journals, printing short-unix lines ("time host unit[pid]: message") as they come."""
-    cmd = ["journalctl", "-f", "-n", str(lines), "-o", "short-unix", "-q"]
+def follow_cmd(units: list[str], lines: int = 0, message_only: bool = False, human: bool = False) -> list[str]:
+    """The command that follows units' journals, printing short-unix lines ("time host unit[pid]: message") as they come
+    (human: journalctl's usual dates, for a terminal)."""
+    cmd = ["journalctl", "-f", "-n", str(lines)] + ([] if human else ["-o", "short-unix"]) + ["-q"]
     for u in units:
         cmd += ["-u", u]
     if message_only:
         cmd += ["--output-fields=MESSAGE"]
     return cmd
+
+
+def journal_cmd(unit: str, lines: int) -> list[str]:
+    """The command that prints a unit's last lines for a person (outcrop logs)."""
+    return ["journalctl", "-u", unit, "-n", str(lines), "--no-pager", "-q"]

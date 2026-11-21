@@ -15,6 +15,7 @@ from . import tls
 
 sys.path.insert(0, str(config.PROJECT / "lib"))
 import strata_presets as SP  # noqa: E402
+import units  # noqa: E402
 
 _cache: dict = {}
 
@@ -112,7 +113,7 @@ def posture(ctx, live) -> list[dict]:
         add("firewall", enabled and bool(marker), "The firewall allows only the LAN",
             ("ufw on; " + marker.split(" ", 1)[1]) if enabled and marker else "ufw is on, but not with setup/harden.sh's "
             "LAN rules" if enabled else "ufw is off", "setup/harden.sh firewall")
-        rdp = _out(["systemctl", "is-active", "gnome-remote-desktop.service"])
+        rdp = units.is_active("gnome-remote-desktop.service")
         add("rdp", rdp != "active", "Remote desktop (RDP) is off", "off" if rdp != "active" else "port 3389 is listening",
             "setup/harden.sh headless")
         sshd = _safe_read(Path("/etc/ssh/sshd_config.d/01-outcrop-keys-only.conf"))

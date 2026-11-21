@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from starlette.background import BackgroundTask
 
 from ..common import config, db, tokens
-from .control import SP
+from .control import SP, units
 
 # Strata's own page keeps its preferences in localStorage, which its sandbox (an opaque origin) does not have.  The
 # console serves a stand-in for it: the page's preference keys are kept in the console's settings (dark until you flip
@@ -130,13 +130,8 @@ class Logs:
         else:
             unit = self.unit_for(source)
             if unit:
-                r = subprocess.run(["journalctl", "-u", unit, "-n", str(lines * 3 if q else lines), "-o", "short-unix",
-                                    "--no-pager", "-q"], capture_output=True, text=True, timeout=15)
-                for ln in r.stdout.splitlines():
-                    t, _, rest = ln.partition(" ")
-                    msg = rest.split(": ", 1)[1] if ": " in rest else rest
-                    with contextlib.suppress(ValueError):
-                        out.append({"t": float(t), "msg": msg, "level": level_of(msg)})
+                for t, msg in units.journal(unit, lines=lines * 3 if q else lines):
+                    out.append({"t": t, "msg": msg, "level": level_of(msg)})
         if q:
             ql = q.lower()
             out = [x for x in out if ql in x["msg"].lower()]
@@ -184,8 +179,8 @@ class Logs:
 
     async def _follow_journal_once(self) -> None:
         self.proc = await asyncio.create_subprocess_exec(
-            "journalctl", "-f", "-n", "0", "-o", "short-unix", "-q", "-u", "outcrop-engine@*", "-u", "outcrop-gateway.service",
-            "-u", "outcrop-console.service", "-u", "outcrop-ollama-bridge.service", "--output-fields=MESSAGE",
+            *units.follow_cmd(["outcrop-engine@*", "outcrop-gateway.service", "outcrop-console.service",
+                               "outcrop-ollama-bridge.service"], message_only=True),
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
         assert self.proc.stdout is not None
         while True:

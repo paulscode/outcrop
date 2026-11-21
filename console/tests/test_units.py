@@ -91,3 +91,23 @@ def test_follow_cmd():
     assert units.follow_cmd(["outcrop-engine@*", "outcrop-gateway.service"], message_only=True) == [
         "journalctl", "-f", "-n", "0", "-o", "short-unix", "-q", "-u", "outcrop-engine@*", "-u", "outcrop-gateway.service",
         "--output-fields=MESSAGE"]
+
+
+def test_console_unit_states(fake):
+    """The console's units view, through lib/units.py: the same fields, from the same two commands."""
+    from outcrop.console import live
+    fake.answers[("systemctl", "list-units", "outcrop-engine@*")] = (
+        "outcrop-engine@speed.service loaded active running Strata\n", "", 0)
+    fake.answers[("systemctl", "show", "outcrop-gateway.service")] = (
+        "Id=outcrop-gateway.service\nActiveState=active\nSubState=running\nActiveEnterTimestamp=Sat 2026-11-21 10:00:00 UTC\n"
+        "MainPID=77\nNRestarts=1\nResult=success\nUnitFileState=enabled\n\n"
+        "Id=outcrop-engine@speed.service\nActiveState=activating\nSubState=start\nActiveEnterTimestamp=\nMainPID=0\n"
+        "NRestarts=0\nResult=success\nUnitFileState=disabled\n", "", 0)
+    got = live.unit_states()
+    assert fake.calls[1] == ["systemctl", "show", *live.UNITS, "outcrop-engine@speed.service", "-p",
+                             "Id,ActiveState,SubState,ActiveEnterTimestamp,MainPID,NRestarts,Result,UnitFileState"]
+    assert got == {
+        "outcrop-gateway.service": {"active": "active", "sub": "running", "since": "Sat 2026-11-21 10:00:00 UTC", "pid": 77,
+                                    "restarts": 1, "result": "success", "enabled": "enabled"},
+        "outcrop-engine@speed.service": {"active": "activating", "sub": "start", "since": None, "pid": 0, "restarts": 0,
+                                         "result": "success", "enabled": "disabled"}}

@@ -13,13 +13,13 @@ import json
 import logging
 import os
 import re
-import subprocess
 import time
 from pathlib import Path
 
 import httpx
 
 from ..common import config
+from .control import units
 
 log = logging.getLogger("outcrop.console")
 
@@ -464,28 +464,13 @@ def _cpulist(s: str) -> list[int]:
 
 def unit_states() -> dict:
     """The LLM units' states: {unit: {active, sub, since, pid, restarts, result}}."""
-    names = list(UNITS)
-    r = subprocess.run(["systemctl", "list-units", "outcrop-engine@*", "--all", "--no-legend", "--plain"],
-                       capture_output=True, text=True, timeout=10)
-    for ln in r.stdout.splitlines():
-        f = ln.split()
-        if f and f[0].startswith("outcrop-engine@"):
-            names.append(f[0])
-    r = subprocess.run(["systemctl", "show", *names, "-p", "Id,ActiveState,SubState,ActiveEnterTimestamp,MainPID,NRestarts,"
-                        "Result,UnitFileState"], capture_output=True, text=True, timeout=10)
-    out, cur = {}, {}
-    for ln in r.stdout.splitlines() + [""]:
-        if not ln.strip():
-            if cur.get("Id"):
-                out[cur["Id"]] = {"active": cur.get("ActiveState"), "sub": cur.get("SubState"),
-                                  "since": cur.get("ActiveEnterTimestamp") or None, "pid": int(cur.get("MainPID") or 0),
-                                  "restarts": int(cur.get("NRestarts") or 0), "result": cur.get("Result"),
-                                  "enabled": cur.get("UnitFileState")}
-            cur = {}
-            continue
-        k, _, v = ln.partition("=")
-        cur[k] = v
-    return out
+    names = list(UNITS) + [u for u, _, _ in units.list_engine()]
+    shown = units.show(names, ["ActiveState", "SubState", "ActiveEnterTimestamp", "MainPID", "NRestarts", "Result",
+                               "UnitFileState"])
+    return {uid: {"active": cur.get("ActiveState"), "sub": cur.get("SubState"),
+                  "since": cur.get("ActiveEnterTimestamp") or None, "pid": int(cur.get("MainPID") or 0),
+                  "restarts": int(cur.get("NRestarts") or 0), "result": cur.get("Result"), "enabled": cur.get("UnitFileState")}
+            for uid, cur in shown.items()}
 
 
 def summarize_metrics(m: dict) -> dict:

@@ -16,6 +16,7 @@ from ..common import config
 sys.path.insert(0, str(config.PROJECT / "lib"))
 import outcrop_control as LC  # noqa: E402
 import strata_presets as SP  # noqa: E402
+import units  # noqa: E402,F401  (the service manager, for the console's other modules)
 
 
 class Controller:

@@ -35,6 +35,7 @@ Presets live in $OUTCROP_HOME/presets.json (default ~/.outcrop), made from a har
 Each preset runs as the systemd unit outcrop-engine@PRESET.
 """
 import os
+import shlex
 import socket
 import subprocess
 import sys
@@ -144,7 +145,7 @@ def cmd_status(_):
                 print(f"{B}Now:{X}      answering a request ({st.get('tokens_per_s', '?')} tokens/s)")
         else:
             print(f"{B}Server:{X}   {state}")
-        up = LC.out(["systemctl", "show", unit, "-p", "ActiveEnterTimestamp", "--value"])
+        up = LC.units.show([unit], ["ActiveEnterTimestamp"]).get(unit, {}).get("ActiveEnterTimestamp", "")
         if up:
             print(f"{B}Since:{X}    {up}")
     if SP.gateway_mode(c) or SP.bypass():
@@ -324,7 +325,7 @@ def cmd_boot_start(_):
         return
     if not LC.NAME_RE.match(name) or name not in SP.names():
         sys.exit(f"the boot default {name!r} is not a preset")
-    subprocess.run(["systemctl", "start", "--no-block", LC.UNIT.format(name)], check=True)
+    LC.systemctl("start", "--no-block", LC.UNIT.format(name))
     print(f"started {name}")
 
 
@@ -338,9 +339,10 @@ def cmd_logs(args):
     log = SP.OUTCROP_HOME / "logs" / f"engine-{name}.log"
     unit = LC.UNIT.format(name)
     if follow:
-        os.execvp("bash", ["bash", "-c", f"journalctl -u {unit} -f -n {n} & tail -F -n {n} {log}; wait"])
+        jf = shlex.join(LC.units.follow_cmd([unit], lines=int(n), human=True))
+        os.execvp("bash", ["bash", "-c", f"{jf} & tail -F -n {n} {shlex.quote(str(log))}; wait"])
     print(f"{B}== journal: {unit}{X}")
-    run(["journalctl", "-u", unit, "-n", n, "--no-pager", "-q"])
+    run(LC.units.journal_cmd(unit, int(n)))
     print(f"{B}== engine log: {log}{X}")
     run(["tail", "-n", n, str(log)])
 

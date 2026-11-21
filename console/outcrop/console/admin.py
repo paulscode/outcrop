@@ -149,13 +149,13 @@ def cmd_tls(a) -> int:
         # (a chat answer, a switch, a request): the old certificate stays valid for weeks, so there is time to wait.
         outcrop = [sys.executable, str(config.PROJECT / "bin" / "outcrop")]
         problems = []
-        if subprocess.run(["systemctl", "is-active", "-q", "outcrop-console.service"]).returncode == 0:
+        units = _units()
+        if units.is_active("outcrop-console.service") == "active":
             subprocess.run([*outcrop, "gateway", "wait-idle", "--console", "--timeout", "3600"], capture_output=True)
-            r1 = subprocess.run(["systemctl", "--no-ask-password", "try-restart", "outcrop-console.service"],
-                                capture_output=True, text=True)
+            r1 = units.ctl("try-restart", "outcrop-console.service", check=False)
             if r1.returncode != 0:
                 problems.append(f"the console was not restarted ({(r1.stderr or '').strip()[:160]})")
-        if subprocess.run(["systemctl", "is-active", "-q", "outcrop-gateway.service"]).returncode == 0:
+        if units.is_active("outcrop-gateway.service") == "active":
             r2 = subprocess.run([*outcrop, "gateway", "restart", "--when-idle", "--timeout", "3600"], capture_output=True,
                                 text=True)
             if r2.returncode != 0:
@@ -171,6 +171,13 @@ def cmd_tls(a) -> int:
         return 0
     print(__doc__)
     return 2
+
+
+def _units():
+    """lib/units.py: systemd, or the StartOS container's supervisor."""
+    sys.path.insert(0, str(config.PROJECT / "lib"))
+    import units
+    return units
 
 
 def cmd_backup(a) -> int:
@@ -194,10 +201,10 @@ def cmd_restore(a) -> int:
     if sys.stdin.isatty() and not a.yes:
         if input(f"Replace the console's state with {a.file}? The gateway and console restart. [y/N] ").lower() != "y":
             return 1
+    units = _units()
     for u in ("outcrop-console.service", "outcrop-gateway.service"):
-        subprocess.run(["systemctl", "--no-ask-password", "stop", u], capture_output=True)
-    still = [u for u in ("outcrop-console.service", "outcrop-gateway.service")
-             if subprocess.run(["systemctl", "is-active", "-q", u]).returncode == 0]
+        units.ctl("stop", u, check=False)
+    still = [u for u in ("outcrop-console.service", "outcrop-gateway.service") if units.is_active(u) == "active"]
     if still:
         # they would go on writing into the database being replaced
         print(f"{R}could not stop {', '.join(still)}: nothing restored{X} (sudo systemctl stop them, then run this again)",
@@ -211,7 +218,7 @@ def cmd_restore(a) -> int:
             tokens.ensure_local_token(db.connect(), tokens.load_pepper(), by="restore")
     finally:
         for u in ("outcrop-gateway.service", "outcrop-console.service"):
-            subprocess.run(["systemctl", "--no-ask-password", "start", u], capture_output=True)
+            units.ctl("start", u, check=False)
     print(f"{G}restored{X} the backup of {datetime.fromtimestamp(meta['made_at']):%Y-%m-%d %H:%M} from {meta['host']}"
           + ("" if meta.get("secrets") else f"; {Y}it had no secrets: rotate each token (outcrop token rotate NAME){X}")
           + (f"; the previous database is kept as {meta['previous_db']}" if meta.get("previous_db") else ""))
