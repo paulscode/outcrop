@@ -104,6 +104,10 @@ class Net:
     console_port: int = 443
     console_http_port: int = 80
     https_port: int = 0                    # the OpenAI/Anthropic API on HTTPS too (the console's certificate); 0: off
+    # The OpenAI/Anthropic API on plain HTTP behind a reverse proxy that terminates TLS (StartOS's); 0: off.  Only on this
+    # port, and only from these exact addresses, is X-Forwarded-For believed (gateway/app.py client_ip).
+    proxied_port: int = 0
+    trusted_proxies: list[str] = field(default_factory=list)
 
     @property
     def strata_url(self) -> str:
@@ -135,6 +139,8 @@ def net(cfg: dict | None = None) -> Net:
         extra_hosts=list(g.get("hosts", [])),
         model_id=str(s.get("model_id", "qwen3.8-flash-next")),
         https_port=int(g.get("https_port", 0) or 0),
+        proxied_port=int(g.get("proxied_port", 0) or 0),
+        trusted_proxies=[str(x) for x in g.get("trusted_proxies", [])],
         console_port=int(c.get("port", 443)),
         console_http_port=int(c.get("http_port", 80)),
     )

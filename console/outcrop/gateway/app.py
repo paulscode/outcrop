@@ -104,6 +104,21 @@ def norm_ip(ip: str | None) -> str:
     return str(a)
 
 
+def client_ip(peer: str | None, headers: dict[str, str], proxied: bool, trusted: frozenset[str]) -> str:
+    """The client's address: the TCP peer, except on the port behind a reverse proxy (gateway.proxied_port) when the peer is
+    one of the trusted proxies.  Then it is the last X-Forwarded-For entry, the one that proxy wrote (StartOS's replaces
+    whatever the client sent).  Forwarded and X-Real-IP are never read: StartOS passes a client's Forwarded through."""
+    ip = norm_ip(peer)
+    if not proxied or ip not in trusted:
+        return ip
+    last = (headers.get("x-forwarded-for") or "").split(",")[-1].strip()
+    try:
+        ipaddress.ip_address(last.split("%", 1)[0])
+    except ValueError:
+        return ip                    # nothing usable: the proxy itself
+    return norm_ip(last)
+
+
 def error_body(dialect: str, status: int, message: str, code: str | None = None) -> bytes:
     if dialect == policy.D_ANTHROPIC:
         t = {400: "invalid_request_error", 401: "authentication_error", 403: "permission_error", 404: "not_found_error",
@@ -131,7 +146,10 @@ class Gateway:
         self.upstream_host = self.strata_url.split("://", 1)[-1].encode()
         # local port -> listener
         self.ports = ports or {net.openai_port: OPENAI, net.ollama_port: OLLAMA,
-                               **({net.https_port: OPENAI} if net.https_port else {})}
+                               **({net.https_port: OPENAI} if net.https_port else {}),
+                               **({net.proxied_port: OPENAI} if net.proxied_port else {})}
+        self.proxied_ports = frozenset({net.proxied_port} - {0})
+        self.trusted_proxies = frozenset(norm_ip(x) for x in net.trusted_proxies)
         self.tokens = tokens.TokenCache(self.pepper)
         self.settings = Settings()
         self.names: set[str] = set()
@@ -457,7 +475,8 @@ class Gateway:
             size += len(k) + len(v)
             h[k.decode("latin-1").lower()] = v.decode("latin-1")
         client = scope.get("client")
-        ip = norm_ip(client[0] if client else "")
+        server = scope.get("server")
+        ip = client_ip(client[0] if client else "", h, bool(server and server[1] in self.proxied_ports), self.trusted_proxies)
         rid = "req_" + secrets.token_hex(6)
         if size > MAX_HEADER_BYTES:
             return await self._plain(send, 431, b'{"error":{"message":"request headers too large"}}', rid)
@@ -471,7 +490,6 @@ class Gateway:
             return await self._preflight(send, h, rid)
         ua = h.get("user-agent", "")
         app = apps.recognize(ua, h)
-        server = scope.get("server")
         local_ip = norm_ip(server[0]) if server and server[0] else ""
         decision = self.decide(listener, route, ip, method, raw_headers, h, now, local_ip)
         if not decision.allowed:

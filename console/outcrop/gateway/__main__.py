@@ -72,6 +72,10 @@ async def amain(a) -> int:
                  db_path=Path(a.db) if a.db else None, searx_url=a.searx_url, fetch_sock=a.fetch_sock)
     await gw.start()
     socks = [tcp_socket(listen, net.openai_port), tcp_socket(listen, net.ollama_port)]
+    if net.proxied_port:            # plain HTTP for a TLS-terminating proxy in front (StartOS); see gateway/app.py client_ip
+        socks.append(tcp_socket(listen, net.proxied_port))
+        logging.getLogger("outcrop.gateway").info("and port %d behind the proxy at %s", net.proxied_port,
+                                                  ", ".join(net.trusted_proxies) or "(none trusted)")
     sock_path = Path(a.socket) if a.socket else config.GATEWAY_SOCK
     usock = unix_socket(sock_path)
     common = dict(ws="none", lifespan="off", proxy_headers=False, server_header=False, date_header=True,

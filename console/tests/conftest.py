@@ -58,7 +58,7 @@ def bound(port: int = 0) -> socket.socket:
 
 
 class Stack:
-    def __init__(self, tmp: Path, hold_max_s: float = 3.0):
+    def __init__(self, tmp: Path, hold_max_s: float = 3.0, proxied: bool = False):
         self.tmp = tmp
         self.fake = FakeStrata(api_key=UPSTREAM_KEY).start()
         self.bridge_port = free_port()
@@ -72,11 +72,16 @@ class Stack:
         self.s_openai, self.s_ollama = bound(), bound()
         self.openai_port = self.s_openai.getsockname()[1]
         self.ollama_port = self.s_ollama.getsockname()[1]
+        # proxied: a third port, as behind StartOS's proxy, with this machine (127.0.0.1) as the trusted proxy
+        self.s_proxied = bound() if proxied else None
+        self.proxied_port = self.s_proxied.getsockname()[1] if proxied else 0
         net = config.Net(strata_port=self.fake.port, openai_port=self.openai_port, ollama_port=self.ollama_port,
-                         bridge_port=self.bridge_port, hold_max_s=hold_max_s, body_max_mib=1)
+                         bridge_port=self.bridge_port, hold_max_s=hold_max_s, body_max_mib=1,
+                         proxied_port=self.proxied_port, trusted_proxies=["127.0.0.1"] if proxied else [])
         self.gw = Gateway(net, db_path=self.db_path, pepper=self.pepper, upstream_key=UPSTREAM_KEY,
                           strata_url=self.fake.url, bridge_url=f"http://127.0.0.1:{self.bridge_port}",
-                          ports={self.openai_port: "openai", self.ollama_port: "ollama"})
+                          ports={self.openai_port: "openai", self.ollama_port: "ollama",
+                                 **({self.proxied_port: "openai"} if proxied else {})})
         self.sock_path = tmp / "gateway.sock"
         self.ready = threading.Event()
         self.loop = asyncio.new_event_loop()
@@ -97,7 +102,8 @@ class Stack:
         self.api = Server(uvicorn.Config(self.gw, http="httptools", timeout_keep_alive=5, **common))
         self.ctl = Server(uvicorn.Config(Control(self.gw), http="h11", **common))
         usock = unix_socket(self.sock_path)
-        t = asyncio.gather(self.api.serve(sockets=[self.s_openai, self.s_ollama]), self.ctl.serve(sockets=[usock]))
+        socks = [self.s_openai, self.s_ollama] + ([self.s_proxied] if self.s_proxied else [])
+        t = asyncio.gather(self.api.serve(sockets=socks), self.ctl.serve(sockets=[usock]))
         await asyncio.sleep(0.2)
         self.ready.set()
         await t
