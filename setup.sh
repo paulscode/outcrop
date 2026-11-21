@@ -153,9 +153,9 @@ fi
 
 if [ -z "$CHECK" ] || [ "$PROBLEMS" = 0 ]; then
   # the files setup actually fetches (a site's front page may refuse a HEAD request)
-  for u in https://huggingface.co/api/models/ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF \
-           https://github.com/Niko1221/Strata \
-           https://developer.download.nvidia.com/compute/cuda/12.9.1/local_installers/cuda_12.9.1_575.57.08_linux.run; do
+  # shellcheck source=setup/pins.env
+  . "$PROJECT/setup/pins.env"
+  for u in "https://huggingface.co/api/models/$HF_REPO" https://github.com/Niko1221/Strata "$CUDA_URL"; do
     python3 -c 'import sys, urllib.request; urllib.request.urlopen(urllib.request.Request(sys.argv[1], method="HEAD"), timeout=20)' "$u" \
       2> /dev/null || { bad "cannot reach $(echo "$u" | cut -d/ -f3) (the downloads come from there)"; continue; }
   done

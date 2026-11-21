@@ -5,16 +5,18 @@
 #   The 28.8 GB n-gram shard (file 2 of 2) is identical in every pack, so it is fetched once into models/ngram and linked.
 set -u
 OUTCROP_HOME=${OUTCROP_HOME:-$HOME/.outcrop}
-REV=ed59f92082b1e93c0e96d60a8b11aab089b52f09
-BASE=https://huggingface.co/ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF/resolve/$REV
+# the revision and the SHA-256 values: setup/pins.env
+# shellcheck source=pins.env
+. "$(dirname "$0")/pins.env"
+BASE=https://huggingface.co/$HF_REPO/resolve/$HF_REV
 NGRAM=Qwen3.8-Flash-Next-GSQ-RCO-Q2_0-00002-of-00002.gguf
 declare -A SHA=(
-  [ngram]=316b46f3a2dbd68c900f43136ab9449f9dcc3725dfd8c794847c204bc161e113
-  [Q2_0]=69820c02ec7d0b45ef2ebb19d6620299db749fe2aded7f39f93c6b88b199b720
-  [IQ2_XS]=92cee27ae5bbadcd732416a0f7a7f0acc092399dbbe8f5a5efa707c2ec0a49d7
-  [IQ3_XXS]=219ea929900dfa9ef091f3aa473fdba6874b65fcb36526d7d851ac9e95856d15
-  [IQ3_S]=4c1eb2ceb4915e1192f4f386021897bde56a97f40a0bb78bb86465e0f7d2aca3
-  [vision]=b1a82259702816a5330d7bd7607cd9676b11780e79ff7348c21103ff3ce49bd0
+  [ngram]=$SHA256_NGRAM
+  [Q2_0]=$SHA256_Q2_0
+  [IQ2_XS]=$SHA256_IQ2_XS
+  [IQ3_XXS]=$SHA256_IQ3_XXS
+  [IQ3_S]=$SHA256_IQ3_S
+  [vision]=$SHA256_VISION
 )
 M=$OUTCROP_HOME/models
 mkdir -p "$M/ngram" "$M/vision"

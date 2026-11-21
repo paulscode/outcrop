@@ -11,10 +11,9 @@
 set -euo pipefail
 PROJECT=$(cd "$(dirname "$0")/.." && pwd)
 export OUTCROP_HOME=${OUTCROP_HOME:-$HOME/.outcrop}
-STRATA_COMMIT=c3b3f5035506f3e966f1b4b7b188aeaabae92f1d     # Strata v0.2.11 (Control and engine 0.1.57)
-LLAMA_COMMIT=3cf03257f219afbe7334045ff7c6a06ac68c627d      # the llama.cpp commit Strata 0.2.11 pins
-CUDA_RUN=cuda_12.9.1_575.57.08_linux.run                    # CUDA 13 cannot compile for Maxwell; 12.9 is the last 12.x
-CUDA_URL=https://developer.download.nvidia.com/compute/cuda/12.9.1/local_installers/$CUDA_RUN
+# STRATA_COMMIT, LLAMA_COMMIT, CUDA_RUN and CUDA_URL: setup/pins.env
+# shellcheck source=pins.env
+. "$PROJECT/setup/pins.env"
 mkdir -p "$OUTCROP_HOME"/{src,models,data/packs,data/mtp,cfg,logs,bin,pkgs,state}
 
 # The profile: presets.json from it (once; later `outcrop profile apply` changes it), and the packs it needs.

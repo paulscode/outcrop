@@ -5,7 +5,9 @@ set -euo pipefail
 SRC=$(cd "$1" && pwd); NAME=$2
 OUTCROP_HOME=${OUTCROP_HOME:-$HOME/.outcrop}
 CUDA=/usr/local/cuda-12.9
-LLAMA_PIN=3cf03257f219afbe7334045ff7c6a06ac68c627d
+# shellcheck source=pins.env
+. "$(dirname "$0")/pins.env"
+LLAMA_PIN=$LLAMA_COMMIT
 [ -d "$SRC/.llama.cpp" ] || cp -a "$OUTCROP_HOME/src/llama.cpp" "$SRC/.llama.cpp"
 [ "$(git -C "$SRC/.llama.cpp" rev-parse HEAD)" = "$LLAMA_PIN" ] || { echo "llama.cpp is not at $LLAMA_PIN"; exit 1; }
 export PATH=$CUDA/bin:$PATH
