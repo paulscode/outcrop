@@ -21,6 +21,7 @@ import sys
 from pathlib import Path
 
 import uvicorn
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from ..common import config
 from . import tls
@@ -120,6 +121,23 @@ def http_app(names: set[str]):
     return app
 
 
+def proxy_peers(addrs: list[str]) -> list[str]:
+    """The trusted proxies as a dual-stack socket reports them: 10.0.3.1 arrives as ::ffff:10.0.3.1."""
+    out = []
+    for a in addrs:
+        out.append(a)
+        if "." in a and ":" not in a:
+            out.append(f"::ffff:{a}")
+    return out
+
+
+def behind_proxy(app, trusted: list[str]):
+    """The console behind a TLS-terminating proxy (StartOS's): the client's address and the https scheme from
+    X-Forwarded-For and X-Forwarded-Proto, only on connections from the trusted proxies (uvicorn's middleware: the last
+    X-Forwarded-For entry; Forwarded and X-Real-IP are never read).  The scheme decides the Secure __Host- cookie."""
+    return ProxyHeadersMiddleware(app, trusted_hosts=proxy_peers(trusted))
+
+
 async def amain(a) -> int:
     opts = Options(dev=a.dev, https=not a.dev, port=a.port or (8800 if a.dev else 443), http_port=a.http_port or 80,
                    host=a.listen or "::", strata_url=a.strata, gateway_sock=Path(a.gateway_sock) if a.gateway_sock else None,
@@ -127,11 +145,18 @@ async def amain(a) -> int:
                    extra_origins=a.origin or [], gateway_url=a.gateway_url, log_dir=Path(a.log_dir) if a.log_dir else None,
                    gateway_ollama_port=a.gateway_ollama_port, searx_url=a.searx_url,
                    fetch_sock=Path(a.fetch_sock) if a.fetch_sock else None)
+    net = config.net()
+    proxied = not a.dev and net.console_proxied_port
+    if proxied:
+        opts.https, opts.port = False, a.port or net.console_proxied_port
     app = create_app(opts)
     common = dict(ws="websockets-sansio", lifespan="on", proxy_headers=False, server_header=False, access_log=False,
                   log_level="warning", timeout_keep_alive=30)
     servers = []
-    if a.dev:
+    if proxied:
+        servers.append((Server(uvicorn.Config(behind_proxy(app, net.trusted_proxies), http="httptools", **common)),
+                        [tcp_socket(opts.host, opts.port)]))
+    elif a.dev:
         servers.append((Server(uvicorn.Config(app, http="httptools", **common)), [tcp_socket(opts.host, opts.port)]))
     else:
         info = tls.ensure()
@@ -151,7 +176,9 @@ async def amain(a) -> int:
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, stop)
     logging.getLogger("outcrop.console").info("console on %s port %d%s", opts.host, opts.port,
-                                              " (development, plain HTTP)" if a.dev else f" (HTTPS) and {opts.http_port}")
+                                              " (development, plain HTTP)" if a.dev else
+                                              f" (plain HTTP behind the proxy at {', '.join(net.trusted_proxies)})"
+                                              if proxied else f" (HTTPS) and {opts.http_port}")
     await asyncio.gather(*(s.serve(sockets=socks) for s, socks in servers))
     return 0
 

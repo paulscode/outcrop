@@ -108,6 +108,9 @@ class Net:
     # port, and only from these exact addresses, is X-Forwarded-For believed (gateway/app.py client_ip).
     proxied_port: int = 0
     trusted_proxies: list[str] = field(default_factory=list)
+    # The console on plain HTTP behind that same proxy (presets.json console.proxied_port): no certificate of its own and
+    # no port 80; 0: off (HTTPS on console_port with the private CA, as on Ubuntu).
+    console_proxied_port: int = 0
 
     @property
     def strata_url(self) -> str:
@@ -143,6 +146,7 @@ def net(cfg: dict | None = None) -> Net:
         trusted_proxies=[str(x) for x in g.get("trusted_proxies", [])],
         console_port=int(c.get("port", 443)),
         console_http_port=int(c.get("http_port", 80)),
+        console_proxied_port=int(c.get("proxied_port", 0) or 0),
     )
 
 
