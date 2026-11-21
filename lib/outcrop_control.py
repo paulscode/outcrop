@@ -1,7 +1,7 @@
 """Preset control shared by outcrop and the console: units, the boot default, Strata and gateway access, and the switch.
 
-Standard library only.  systemctl is called without sudo (a polkit rule, setup/polkit/50-outcrop.rules, lets this user start and
-stop only the LLM units) and falls back to `sudo -n` where the rule is not installed.
+Standard library only.  The units are run by systemd on Ubuntu and by Outcrop's supervisor in the StartOS container: every call
+to them goes through lib/units.py, which picks the backend.
 
 A switch is a small state machine, each step timed and recorded:
   plan (render, RAM, page cache, estimate) -> hold (the gateway queues new requests) -> drain or cancel what runs ->
@@ -22,6 +22,7 @@ from pathlib import Path
 PROJECT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT / "lib"))
 import strata_presets as SP  # noqa: E402
+import units  # noqa: E402
 
 UNIT = "outcrop-engine@{}.service"
 BOOT_UNIT = "outcrop-boot.service"
@@ -41,15 +42,8 @@ def _run(cmd, timeout=None):
 
 
 def systemctl(*args, check: bool = True, timeout: float | None = 180) -> subprocess.CompletedProcess:
-    """systemctl as this user (allowed by the polkit rule), else with sudo -n."""
-    cmd = ["systemctl", "--no-ask-password", *args]
-    r = _run(cmd, timeout)
-    if r.returncode != 0 and os.geteuid() != 0 and re.search(r"Access denied|authentication required|Permission denied|"
-                                                            r"Interactive authentication", r.stderr or "", re.I):
-        r = _run(["sudo", "-n", *cmd], timeout)
-    if check and r.returncode != 0:
-        raise RuntimeError(f"systemctl {' '.join(args)} failed: {(r.stderr or r.stdout).strip()}")
-    return r
+    """A verb for the service manager, in systemctl's terms (lib/units.py)."""
+    return units.ctl(*args, check=check, timeout=timeout)
 
 
 def out(cmd) -> str:
@@ -60,17 +54,13 @@ def out(cmd) -> str:
 
 
 def unit_state(unit: str) -> str:
-    return out(["systemctl", "is-active", unit]) or "unknown"
+    return units.is_active(unit)
 
 
 def running() -> list[tuple[str, str]]:
     """Presets whose unit is active or starting: [(name, state)]."""
-    res = []
-    for ln in out(["systemctl", "list-units", "outcrop-engine@*", "--all", "--no-legend", "--plain"]).splitlines():
-        f = ln.split()
-        if len(f) >= 4 and f[0].startswith("outcrop-engine@") and f[2] in ("active", "activating", "reloading"):
-            res.append((f[0][len("outcrop-engine@"):-len(".service")], f[3]))
-    return res
+    return [(u[len("outcrop-engine@"):-len(".service")], sub) for u, active, sub in units.list_engine()
+            if active in ("active", "activating", "reloading")]
 
 
 def current() -> str | None:
@@ -79,7 +69,7 @@ def current() -> str | None:
 
 
 def boot_unit_installed() -> bool:
-    return Path("/etc/systemd/system", BOOT_UNIT).exists()
+    return units.boot_unit_installed()
 
 
 def default_preset() -> str | None:
@@ -92,7 +82,7 @@ def default_preset() -> str | None:
         except OSError:
             return None
     for n in SP.names():
-        if out(["systemctl", "is-enabled", UNIT.format(n)]) == "enabled":
+        if units.is_enabled(UNIT.format(n)) == "enabled":
             return n
     return None
 
@@ -102,7 +92,7 @@ def set_default(name: str, by: str = "cli", source: str = "") -> None:
         raise ValueError(f"unknown preset {name!r}; presets: {', '.join(SP.names())}")
     if not boot_unit_installed():
         for n in SP.names():
-            if n != name and out(["systemctl", "is-enabled", UNIT.format(n)]) == "enabled":
+            if n != name and units.is_enabled(UNIT.format(n)) == "enabled":
                 systemctl("disable", "-q", UNIT.format(n))
         systemctl("enable", "-q", UNIT.format(name))
     else:
@@ -263,24 +253,12 @@ def parse_phase(line: str) -> tuple[str, dict] | None:
 
 def journal_since(unit: str, since: float) -> list[tuple[float, str]]:
     """The unit's journal lines since a Unix time: [(time, message)]."""
-    txt = out(["journalctl", "-u", unit, "--since", f"@{since:.3f}", "-o", "short-unix", "--no-pager", "-q"])
-    res = []
-    for ln in txt.splitlines():
-        parts = ln.split(" ", 2)
-        if len(parts) < 3:
-            continue
-        try:
-            t = float(parts[0])
-        except ValueError:
-            continue
-        msg = parts[2].split(": ", 1)[1] if ": " in parts[2] else parts[2]
-        res.append((t, msg))
-    return res
+    return units.journal(unit, since=since)
 
 
 def engine_pid(unit: str) -> int | None:
     """The engine process under the unit (the largest descendant of its main process)."""
-    main = out(["systemctl", "show", unit, "-p", "MainPID", "--value"])
+    main = units.show([unit], ["MainPID"]).get(unit, {}).get("MainPID", "")
     try:
         root = int(main)
     except ValueError:
