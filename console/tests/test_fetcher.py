@@ -117,7 +117,7 @@ def test_refused_links(url, why):
 
 def test_public_addresses():
     assert F.public("8.8.8.8") and F.public("2606:4700::1111")
-    for ip in ("192.168.1.20", "fdd7:403d:7b78:1::1", "fe80::1", "::ffff:10.0.0.1", "224.0.0.1", "0.0.0.0"):
+    for ip in ("192.168.1.20", "fd12:3456:789a:1::1", "fe80::1", "::ffff:10.0.0.1", "224.0.0.1", "0.0.0.0"):
         assert not F.public(ip), ip
 
 

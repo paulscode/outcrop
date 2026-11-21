@@ -1,9 +1,9 @@
-# CI for every push to main and every pull request: the Python tests (gateway, console, fake Strata), dependency audits, the UI's
+# CI for every push to master and every pull request: the Python tests (gateway, console, fake Strata), dependency audits, the UI's
 # type check, unit tests and build, and Playwright against the whole stack running on the fake Strata.  No GPU is needed.
 name: ci
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
   workflow_dispatch:
 

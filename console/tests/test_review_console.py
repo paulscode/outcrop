@@ -80,7 +80,7 @@ def test_one_password_check_at_a_time_per_address(monkeypatch, tmp_path):
     t.join(5)
     assert ("second", 429) in errs and ("first", 401) in errs
     # per address: two devices on the same IPv6 LAN are not one (a guest can't lock the owner out)
-    assert auth.ip_key("fdd7:403d:7b78:1::1") != auth.ip_key("fdd7:403d:7b78:1:abcd::99")
+    assert auth.ip_key("fd12:3456:789a:1::1") != auth.ip_key("fd12:3456:789a:1:abcd::99")
     assert auth.ip_key("::ffff:192.168.1.30") == "192.168.1.30"
 
 
