@@ -1,0 +1,27 @@
+# An allowlist: the image gets only what it is built from.  Everything else (the git history, internal_docs, builds,
+# benchmark results, node_modules, local state) never enters the build context.
+*
+!setup/
+!patches/
+!bin/
+!lib/
+!console/
+!profiles/
+!web/
+!systemd/
+!docker/
+!LICENSE
+!README.md
+
+# inside the allowed directories
+**/__pycache__
+**/*.pyc
+console/.venv
+console/.pytest_cache
+console/.ruff_cache
+web/node_modules
+web/dist
+web/test-results
+web/playwright-report
+web/shots
+web/.pnpm-store
