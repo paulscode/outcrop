@@ -38,8 +38,8 @@ jobs:
           /tmp/fetch-venv/bin/python -I -c "import sys; sys.path.insert(0, '/tmp/fetch-app'); import trafilatura, pypdf, outcrop.fetcher.__main__, outcrop.fetcher.fetch as f; f.readable(b'<html><title>t</title><body><p>hello</p></body></html>', 'text/html', 'utf-8'); print('fetcher ok in its own environment')"
       - name: Shell scripts
         run: |
-          for f in setup.sh setup/*.sh setup/outcrop-boot bin/outcrop-gateway bin/outcrop-console bench/validate.sh examples/bug-hunt/harness/*.sh examples/bug-hunt/coldcard/*.sh; do bash -n "$f"; done
-          shellcheck -S warning setup.sh setup/*.sh setup/outcrop-boot bin/outcrop-gateway bin/outcrop-console bench/validate.sh examples/bug-hunt/harness/*.sh examples/bug-hunt/coldcard/*.sh
+          for f in setup.sh setup/*.sh setup/outcrop-boot bin/outcrop-gateway bin/outcrop-console bin/outcrop-supervisor bench/validate.sh examples/bug-hunt/harness/*.sh examples/bug-hunt/coldcard/*.sh; do bash -n "$f"; done
+          shellcheck -S warning setup.sh setup/*.sh setup/outcrop-boot bin/outcrop-gateway bin/outcrop-console bin/outcrop-supervisor bench/validate.sh examples/bug-hunt/harness/*.sh examples/bug-hunt/coldcard/*.sh
 
   web:
     runs-on: ubuntu-24.04

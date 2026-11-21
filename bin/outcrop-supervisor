@@ -1,0 +1,5 @@
+#!/bin/sh
+# outcrop-supervisor: run Outcrop's units inside the StartOS service container (lib/supervisor.py).  StartOS starts it, as
+# the service's one daemon; on Ubuntu, systemd runs the units and this is not used.  Standard library only: system python3.
+PROJECT=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+exec python3 "$PROJECT/lib/supervisor.py" "$@"
