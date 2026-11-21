@@ -48,26 +48,8 @@ if [ ! -x /usr/local/cuda-12.9/bin/nvcc ]; then
 fi
 
 echo "== 3/8 sources: Strata v0.2.11 with the Maxwell patches, llama.cpp at Strata's pin"
+"$PROJECT/setup/fetch-sources.sh" "$OUTCROP_HOME/src"
 cd "$OUTCROP_HOME/src"
-# Each source is prepared in a .tmp directory and moved into place only when complete (patches applied), so a run that
-# stopped halfway is redone, not skipped.
-if [ ! -d Strata ]; then
-  rm -rf Strata.tmp "Strata-$STRATA_COMMIT" strata.tar.gz
-  curl -fL -o strata.tar.gz "https://github.com/Niko1221/Strata/archive/$STRATA_COMMIT.tar.gz"
-  tar xzf strata.tar.gz && mv "Strata-$STRATA_COMMIT" Strata.tmp && rm strata.tar.gz
-  G="git -C Strata.tmp -c user.name=outcrop -c user.email=outcrop@localhost"
-  $G init -q -b v0.2.11 && $G add -A && $G commit -q -m "Strata $STRATA_COMMIT (v0.2.11)"
-  $G checkout -q -b m6000 && $G am -q "$PROJECT"/patches/*.patch
-  mv Strata.tmp Strata
-fi
-if [ ! -d llama.cpp ]; then
-  # A shallow fetch of the one commit: GitHub's archive download stalled on this network.
-  rm -rf llama.cpp.tmp
-  mkdir llama.cpp.tmp && git -C llama.cpp.tmp init -q && git -C llama.cpp.tmp remote add origin https://github.com/ggml-org/llama.cpp.git
-  git -C llama.cpp.tmp fetch -q --depth 1 origin "$LLAMA_COMMIT" && git -C llama.cpp.tmp checkout -q FETCH_HEAD
-  python3 "$PROJECT/setup/patch_llama_dp4a.py" llama.cpp.tmp/ggml/src/ggml-cuda/common.cuh
-  mv llama.cpp.tmp llama.cpp
-fi
 
 echo "== 4/8 Python environment for the server and the pack tools"
 [ -x Strata/.venv/bin/python ] || python3 -m venv Strata/.venv
@@ -75,12 +57,7 @@ Strata/.venv/bin/pip -q install -r Strata/requirements.txt
 
 echo "== 5/8 engine (about 5 minutes) and the CPU picture encoder"
 [ -x "$OUTCROP_HOME/bin/strata-0211" ] || "$PROJECT/setup/build-engine.sh" "$OUTCROP_HOME/src/Strata" 0211
-if [ ! -x "$OUTCROP_HOME/bin/strata-vision" ]; then
-  cmake -S Strata/tools/vision -B Strata/build-vision -G Ninja -DCMAKE_BUILD_TYPE=Release -DLLAMA_DIR="$OUTCROP_HOME/src/Strata/.llama.cpp" \
-    -DSTRATA_PORTABLE=OFF > "$OUTCROP_HOME/logs/build-vision.log"
-  cmake --build Strata/build-vision --target strata-vision -j"$(nproc)" >> "$OUTCROP_HOME/logs/build-vision.log"
-  install -m 755 Strata/build-vision/bin/strata-vision "$OUTCROP_HOME/bin/strata-vision"
-fi
+[ -x "$OUTCROP_HOME/bin/strata-vision" ] || "$PROJECT/setup/build-vision.sh" "$OUTCROP_HOME/src/Strata"
 
 echo "== 6/8 models for profile $PROFILE: packs $PACKS, the shared n-gram table and the picture encoder's weights"
 # shellcheck disable=SC2086

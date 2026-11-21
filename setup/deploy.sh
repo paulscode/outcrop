@@ -113,7 +113,7 @@ fi
 if has '^lib/strata_presets.py$|^bin/outcrop-serve$'; then
   echo "the engine launcher changed: \`outcrop restart\` applies it to the running preset"
 fi
-if has '^patches/|^setup/install.sh$|^setup/build-engine.sh$|^setup/download-models.sh$|^setup/prep-packs.sh$'; then
+if has '^patches/|^setup/(install|build-engine|build-vision|fetch-sources|download-models|prep-packs)\.sh$|^setup/pins\.env$'; then
   echo "the engine's build or model steps changed: ./setup.sh applies them (finished steps are skipped)"
 fi
 if has '^profiles/'; then
