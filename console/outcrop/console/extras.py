@@ -553,9 +553,9 @@ def validate_presets(text: str) -> dict:
         if eng is None:
             return
         if not isinstance(eng, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", eng):
-            errors.append(f"{where}: engine is a file name in {SP.OUTCROP_HOME / 'bin'} (no paths)")
-        elif (SP.OUTCROP_HOME / "bin").is_dir() and not (SP.OUTCROP_HOME / "bin" / eng).is_file():
-            errors.append(f"{where}: there is no engine {eng!r} in {SP.OUTCROP_HOME / 'bin'}")
+            errors.append(f"{where}: engine is a file name in {SP.ENGINE_DIR} (no paths)")
+        elif SP.ENGINE_DIR.is_dir() and not (SP.ENGINE_DIR / eng).is_file():
+            errors.append(f"{where}: there is no engine {eng!r} in {SP.ENGINE_DIR}")
 
     def check_env(where: str, env) -> None:
         if env is None:

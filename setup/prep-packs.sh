@@ -5,9 +5,11 @@
 #            which the Maxwell GEMV path (STRATA_Q8_SM60) runs fastest.  Each step is skipped when its output exists.
 set -euo pipefail
 OUTCROP_HOME=${OUTCROP_HOME:-$HOME/.outcrop}
-S=$OUTCROP_HOME/src/Strata
+# the engine's sources and gguf-py: under $OUTCROP_HOME as setup/install.sh puts them, unless the environment says otherwise
+# (the StartOS image keeps them under /opt)
+S=${OUTCROP_STRATA:-$OUTCROP_HOME/src/Strata}
 PY=$S/.venv/bin/python
-export STRATA_GGUF_PY=$OUTCROP_HOME/src/llama.cpp/gguf-py
+export STRATA_GGUF_PY=${STRATA_GGUF_PY:-$OUTCROP_HOME/src/llama.cpp/gguf-py}
 cd "$S"
 for p in "$@"; do
   case $p in

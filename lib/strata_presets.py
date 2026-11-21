@@ -14,8 +14,11 @@ from pathlib import Path
 PROJECT = Path(__file__).resolve().parent.parent
 OUTCROP_HOME = Path(os.environ.get("OUTCROP_HOME") or Path.home() / ".outcrop")
 PRESETS_FILE = Path(os.environ.get("OUTCROP_PRESETS") or OUTCROP_HOME / "presets.json")
-STRATA = OUTCROP_HOME / "src" / "Strata"
-CUDA_LIB = "/usr/local/cuda-12.9/lib64"
+# Where the engine lives: setup/install.sh builds it under $OUTCROP_HOME; the StartOS image keeps it under /opt and says so in
+# its environment (Dockerfile).  Unset, these are the Ubuntu paths.
+STRATA = Path(os.environ.get("OUTCROP_STRATA") or OUTCROP_HOME / "src" / "Strata")
+ENGINE_DIR = Path(os.environ.get("OUTCROP_ENGINE_DIR") or OUTCROP_HOME / "bin")
+CUDA_LIB = os.environ.get("OUTCROP_CUDA_LIB") or "/usr/local/cuda-12.9/lib64"
 
 # The GSQ-RCO pack files.  Shard 1 holds the model; shard 2 is the 28.8 GB n-gram table every pack shares.
 SHARD = "Qwen3.8-Flash-Next-GSQ-RCO-{Q}-{n:05d}-of-00002.gguf"
@@ -198,7 +201,7 @@ def unsafe(cfg: dict, name: str) -> list[str]:
             why.append(f"the value of {k} is not allowed (letters, digits and . _ : , + = - only)")
     eng = p.get("engine", cfg.get("engine", "strata"))
     if not isinstance(eng, str) or not ENGINE_NAME.fullmatch(eng):
-        why.append(f"engine {eng!r} is not a file name in {OUTCROP_HOME / 'bin'}")
+        why.append(f"engine {eng!r} is not a file name in {ENGINE_DIR}")
     for k in {**top.get("env", {}), **p.get("env", {})}:
         if not SAFE_ENV.fullmatch(str(k)):
             why.append(f"the variable {k!r} is not allowed")
@@ -220,7 +223,7 @@ def render(name: str, cfg: dict | None = None) -> tuple[Path, list[str]]:
     p = cfg["presets"][name]
     server = cfg.get("server", {})
     args, env, notes = engine_args(p, cfg.get("common", {}))
-    engine = OUTCROP_HOME / "bin" / p.get("engine", cfg.get("engine", "strata"))
+    engine = ENGINE_DIR / p.get("engine", cfg.get("engine", "strata"))
     model_id = server.get("model_id", "qwen3.8-flash-next")
     run = {
         "exe": str(engine), "args": args, "cwd": str(STRATA),
@@ -245,10 +248,10 @@ def render(name: str, cfg: dict | None = None) -> tuple[Path, list[str]]:
             run[k] = v
     vision = p.get("vision", cfg.get("common", {}).get("vision", "cpu"))
     mmproj = OUTCROP_HOME / "models" / "vision" / "mmproj-Qwen3.8-Flash-Next-BF16.gguf"
-    if vision != "off" and mmproj.exists() and (OUTCROP_HOME / "bin" / "strata-vision").exists():
+    if vision != "off" and mmproj.exists() and (ENGINE_DIR / "strata-vision").exists():
         run["args"] = run["args"] + ["--vision"]
         v = cfg.get("common", {}).get("vision_cfg", {})
-        run["vision"] = {"exe": str(OUTCROP_HOME / "bin" / "strata-vision"), "mmproj": str(mmproj),
+        run["vision"] = {"exe": str(ENGINE_DIR / "strata-vision"), "mmproj": str(mmproj),
                          "model": args[args.index("--native") + 1], "gpu": vision == "gpu",
                          "max_tokens": int(v.get("max_tokens", 300)), "threads": min(int(v.get("threads", 16)), os.cpu_count() or 16)}
     elif vision != "off":

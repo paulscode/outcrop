@@ -6,11 +6,15 @@ import re
 import shutil
 import socket
 import subprocess
+import sys
 import time
 from pathlib import Path
 
 from ..common import config, db
 from . import tls
+
+sys.path.insert(0, str(config.PROJECT / "lib"))
+import strata_presets as SP  # noqa: E402
 
 _cache: dict = {}
 
@@ -33,10 +37,10 @@ def _cached(key: str, ttl: float, fn):
 
 def system_info(ctx, live) -> dict:
     def static():
-        strata = config.OUTCROP_HOME / "src" / "Strata"
+        strata = SP.STRATA
         commit = _out(["git", "-C", str(strata), "log", "-1", "--format=%h %s"])
         patches = sorted(p.name for p in (config.PROJECT / "patches").glob("*.patch"))
-        engines = sorted(p.name for p in (config.OUTCROP_HOME / "bin").glob("strata*")) if (config.OUTCROP_HOME / "bin").exists() else []
+        engines = sorted(p.name for p in SP.ENGINE_DIR.glob("strata*")) if SP.ENGINE_DIR.exists() else []
         models = []
         mdir = config.OUTCROP_HOME / "models"
         if mdir.exists():
