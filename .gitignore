@@ -47,6 +47,12 @@ web/.pnpm-store/
 
 # private notes, not published
 internal_docs/
+# StartOS packaging: release builds (builds/<version>/: the .s9pk files, SHA256SUMS and its signature) and the SDK's
+# build output.  Releases are published on GitHub, not kept in git.
+/builds/
+*.s9pk
+/javascript/
+/node_modules/
 # machine-specific: made from a hardware profile (profiles/) into $OUTCROP_HOME, never kept here
 /presets.json
 # screenshots from web/scripts/shot.mjs
