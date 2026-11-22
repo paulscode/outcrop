@@ -318,6 +318,9 @@ def render(name: str, cfg: dict | None = None) -> tuple[Path, list[str]]:
         run["vision"] = {"exe": str(ENGINE_DIR / "strata-vision"), "mmproj": str(mmproj),
                          "model": args[args.index("--native") + 1], "gpu": vision == "gpu",
                          "max_tokens": int(v.get("max_tokens", 300)), "threads": min(int(v.get("threads", 16)), os.cpu_count() or 16)}
+        if "elastic" in v:
+            # Strata starts a GPU encoder with the first picture by default; false loads it with the engine and keeps it
+            run["vision"]["elastic"] = v["elastic"] is True
     elif vision != "off":
         notes.append("pictures off: the vision encoder or its model file is missing")
     out = OUTCROP_HOME / "cfg" / f"{name}.json"

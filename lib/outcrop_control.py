@@ -225,7 +225,7 @@ def gateway_events(timeout: float | None = None):
 PHASES = [
     (re.compile(r"Stopping outcrop-engine@"), "stop", "Stop the running preset"),
     (re.compile(r"Starting outcrop-engine@"), "start", "Start the unit"),
-    (re.compile(r"loading the vision encoder"), "vision", "Picture encoder (CPU)"),
+    (re.compile(r"loading the vision encoder"), "vision", "Picture encoder"),
     (re.compile(r"reading the model's weights|loading the model"), "weights", "Model weights"),
     (re.compile(r"loading the experts into RAM(?: \(about (?P<gb>[\d.]+) GB\))?"), "experts", "Experts into RAM"),
     (re.compile(r"filling the GPU's expert cache \((?P<slots>\d+) experts, (?P<vram>[\d.]+) GiB"), "gpu_cache",

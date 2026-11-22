@@ -31,7 +31,7 @@ export function expectedLabel(key: string, sw: Pick<SwitchState, 'to' | 'from'>)
     case 'start':
       return `Start ${sw.to}`
     case 'vision':
-      return 'Picture encoder (CPU)'
+      return 'Picture encoder'
     case 'weights':
       return 'Model weights'
     case 'experts':
@@ -54,7 +54,7 @@ export const PHASE_HELP: Record<string, string> = {
   drain: 'Requests that are already running finish first (or are cancelled, if you chose that).',
   stop: 'Stops the running engine, which gives back its pinned RAM (about 47 GiB).',
   start: 'Starts the systemd unit of the new preset.',
-  vision: 'Loads the picture encoder, which runs on the CPU.',
+  vision: 'Loads the picture encoder: on the CPU, or on the GPU of a GB10.',
   weights: 'Reads the dense weights (attention, embeddings) into VRAM.',
   experts: 'Reads the experts into RAM (the expert arena); the slowest step when the pack is not in the page cache.',
   gpu_cache: 'Copies the most-used experts into the GPU expert cache in VRAM.',

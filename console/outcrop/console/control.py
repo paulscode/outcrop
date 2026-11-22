@@ -159,7 +159,7 @@ class FakeController(Controller):
                 phase("stop", f"Stop {self._current}", 2.5, preset=self._current)
             self._fake(loaded=False)
             phase("start", f"Start {name}", 0.6)
-            phase("vision", "Picture encoder (CPU)", 1.5)
+            phase("vision", "Picture encoder", 1.5)
             phase("weights", "Model weights", 3.0)
             phase("experts", "Experts into RAM", 6.0, gb="59")
             on({"type": "experts_loaded", "gib": "46.84", "rate": f"{random.uniform(5, 21):.2f}"})
