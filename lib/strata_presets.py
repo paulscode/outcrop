@@ -139,33 +139,24 @@ def mem_available_gib(path: str | None = None) -> int:
     return avail // (1 << 20)
 
 
-# What the engine needs in RAM beside its experts on StartOS, in GiB: the vision encoder's process, and a reserve for the
-# rest.  Measured on a 32 GB StartOS server (lab log, 2026-11-22): about 3.5 GiB beyond the experts, the conversation cache
-# and the vision encoder (KV and prompt buffers on the host, Strata's server, the gateway, the console, the supervisor),
-# and the start needs page cache to stream the pack through.  With 2 GiB reserved, a start with the conversation cache
-# off (22 GiB of experts) went past StartOS's line and stalled; the conversation cache also fills only as conversations
-# are parked, so it must be counted even when a start fits without it.
+# What the engine needs in RAM beside its experts on StartOS, in GiB.  Measured on a 32 GB StartOS server (lab log,
+# 2026-11-22), where 25 GiB were free below StartOS's line: with 15 and 18 GiB of experts kept in RAM the engine started
+# and ran; with 19, 22 and the engine's own sizing it went past the line while loading and stalled for good.  The
+# conversation cache did not change that (it is empty at start, and the engine's RAM guard keeps it within
+# --memory-limit-mib later), so it is not counted.  8 GiB leaves 16 on that server: two below the most that worked.
 STARTOS_VISION_GIB = 1
-STARTOS_RESERVE_GIB = 5
+STARTOS_RESERVE_GIB = 8
 
 
 def startos_budget(p: dict, top: dict, free: int) -> tuple[int, int]:
     """(GiB of experts to keep in RAM, the cgroup limit in MiB for the engine's memory guard) on StartOS.
 
     In low-RAM mode the engine sizes its RAM copy of the experts from MemAvailable, which in the StartOS container is the
-    host's and knows nothing of the line StartOS reclaims its services' memory from (startos_memory_high_kib).  An
-    explicit --resident-budget-gib keeps it below: what Outcrop may take, less the conversation cache (shared memory),
-    the vision encoder and a reserve."""
-    conv_mib = 0
-    words = [w for a in top.get("args", []) + p.get("args", []) for w in (a.split() if isinstance(a, str) else [str(a)])]
-    for i, w in enumerate(words):              # the last one counts, as for the engine (a preset's overrides the common one)
-        if w == "--conversation-cache-mib":
-            try:
-                conv_mib = int(words[i + 1])
-            except (IndexError, ValueError):
-                conv_mib = 0
+    host's and knows nothing of the line StartOS reclaims its services' memory from (startos_memory_high_kib): past that
+    line every process in the service is throttled, the engine's start stalls and the service cannot even stop.  An
+    explicit --resident-budget-gib keeps it below: what Outcrop may take, less the vision encoder and a reserve."""
     vision = STARTOS_VISION_GIB if p.get("vision", top.get("vision", "cpu")) != "off" else 0
-    budget = max(4, free - -(-conv_mib // 1024) - vision - STARTOS_RESERVE_GIB)
+    budget = max(4, free - vision - STARTOS_RESERVE_GIB)
     if p.get("resident_budget_gib") is not None:          # a preset's own choice (measured), never above what fits
         budget = max(1, min(int(p["resident_budget_gib"]), budget))
     limit_mib = startos_memory_high_kib(meminfo_kib().get("MemTotal", 0)) // 1024

@@ -42,8 +42,8 @@ def test_low_ram_mode_on_startos_has_a_budget(tmp_path, monkeypatch):
     monkeypatch.setenv("OUTCROP_PLATFORM", "startos")
     args, _, notes = SP.engine_args(p, top)
     assert "--resident-experts" not in args
-    # 25 GiB below the line, less 4 (conversation cache), 1 (vision), 5 (reserve)
-    assert args[args.index("--resident-budget-gib") + 1] == "15"
+    # 25 GiB below the line, less 1 (vision) and 8 (reserve)
+    assert args[args.index("--resident-budget-gib") + 1] == "16"
     assert args[args.index("--memory-limit-mib") + 1] == str(SP.startos_memory_high_kib(32777228) // 1024)
     assert "below StartOS's memory line" in notes[0]
     monkeypatch.delenv("OUTCROP_PLATFORM")
@@ -52,13 +52,12 @@ def test_low_ram_mode_on_startos_has_a_budget(tmp_path, monkeypatch):
 
 
 def test_startos_budget_knobs(tmp_path, monkeypatch):
-    """A preset can set its own RAM budget (capped at what fits), and turn the conversation cache off for the room."""
+    """A preset can lower its RAM budget, never raise it past what fits: on the 32 GB test server 19 GiB and more stalled."""
     monkeypatch.setattr(SP, "MEMINFO", meminfo(tmp_path, 32777228, 30 * GIB))
     monkeypatch.setenv("OUTCROP_PLATFORM", "startos")
     top = {"args": ["--conversation-cache-mib 4096"], "vision": "cpu"}
-    assert SP.startos_budget({"pack": "iq3_xxs"}, top, 25)[0] == 15
-    assert SP.startos_budget({"pack": "iq3_xxs", "args": ["--conversation-cache-mib 0"]}, top, 25)[0] == 19
+    assert SP.startos_budget({"pack": "iq3_xxs"}, top, 25)[0] == 16
+    # the conversation cache does not change it (off, the start stalled all the same)
+    assert SP.startos_budget({"pack": "iq3_xxs", "args": ["--conversation-cache-mib 0"]}, top, 25)[0] == 16
     assert SP.startos_budget({"pack": "iq3_xxs", "resident_budget_gib": 12}, top, 25)[0] == 12
-    # never above what fits: 22 GiB with the cache off is the start that stalled on the 32 GB test server
-    assert SP.startos_budget({"pack": "iq3_xxs", "resident_budget_gib": 22, "args": ["--conversation-cache-mib 0"]},
-                             top, 25)[0] == 19
+    assert SP.startos_budget({"pack": "iq3_xxs", "resident_budget_gib": 19}, top, 25)[0] == 16
