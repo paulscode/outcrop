@@ -96,6 +96,7 @@ async def amain(a) -> int:
 
     def stop(*_):
         logging.getLogger("outcrop.gateway").info("stopping")
+        gw.hub.close()                                   # end the event streams, or shutdown waits out their timeout
         for srv, _ in servers:
             srv.should_exit = True
 

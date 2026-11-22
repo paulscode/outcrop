@@ -1136,6 +1136,9 @@ class Control:
             while not gone.done():
                 try:
                     ev = await asyncio.wait_for(q.get(), 15.0)
+                    if ev is None:                   # the gateway is stopping (Hub.close)
+                        await send({"type": "http.response.body", "body": b""})
+                        return
                     chunk = b"data: " + json_dumps(ev) + b"\n\n"
                 except asyncio.TimeoutError:
                     chunk = b": keep-alive\n\n"

@@ -105,6 +105,13 @@ class Hub:
                     pass
             q.put_nowait(ev)
 
+    def close(self) -> None:
+        """The gateway is stopping: every subscriber's stream ends now (a None), so shutdown need not wait them out."""
+        for q in list(self.subs):
+            while q.full():
+                q.get_nowait()
+            q.put_nowait(None)
+
     def subscribe(self) -> asyncio.Queue:
         q: asyncio.Queue = asyncio.Queue(self.size)
         self.subs.add(q)
