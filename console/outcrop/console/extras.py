@@ -302,7 +302,23 @@ def memory(h) -> dict:
             "note": "model files kept in RAM, so a switch need not read the disk"},
            {"key": "other", "label": "Everything else", "gib": round(other, 1), "note": "the system, the console, other programs"},
            {"key": "free", "label": "Free", "gib": round(mi.get("MemFree", 0), 1), "note": "unused"}]
-    return {"vram": {"total_mib": round(total), "layers": vram},
+    unified = live.gpu_static.get("memory") == "unified"
+    if unified:
+        # One memory for the CPU and the GPU (a GB10): the GPU's layers are part of the "used" RAM, not a card of their
+        # own.  The engine's KV cache and buffers are not reported separately, so they stay in "everything else".
+        gpu = [dict(lr, gib=round(lr["mib"] / 1024, 1)) for lr in vram if lr["key"] in ("experts", "dense", "mtp")]
+        for lr in gpu:
+            del lr["mib"]
+            lr["note"] = lr["note"].replace("kept on the card", "kept in the GPU's share")
+        gpu_gib = sum(lr["gib"] for lr in gpu)
+        for lr in ram:
+            if lr["key"] == "other":
+                lr["gib"] = round(max(0.0, other + arena - gpu_gib), 1)
+                lr["note"] = "the engine's KV cache and buffers, the system, the console, other programs"
+        ram = gpu + [lr for lr in ram if lr["key"] != "arena"]
+        vram = []
+    return {"unified": unified,
+            "vram": {"total_mib": 0 if unified else round(total), "layers": vram},
             "ram": {"total_gib": round(gib_total, 1), "layers": ram},
             "conversation_cache": {"slots": cc.get("slots"), "budget_gib": round((cc.get("budget_mib") or 0) / 1024, 1),
                                    "parked": cc.get("parked"), "bytes": cc.get("bytes"), "requests": cc.get("requests"),

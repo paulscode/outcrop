@@ -163,9 +163,14 @@ class Live:
             except N.NVMLError:                          # that card is gone (swapped): the first one, as before
                 h = N.nvmlDeviceGetHandleByIndex(0)
             name = N.nvmlDeviceGetName(h)
+            # A GB10 shares the system's memory with the CPU: NVML has no memory figures for it ("Not Supported")
+            mem = _try(lambda: N.nvmlDeviceGetMemoryInfo(h))
+            cuda = _try(N.nvmlSystemGetCudaDriverVersion)
             self.gpu_static = {"name": name.decode() if isinstance(name, bytes) else name,
                                "driver": _s(N.nvmlSystemGetDriverVersion()),
-                               "vram_total_mib": N.nvmlDeviceGetMemoryInfo(h).total // (1 << 20),
+                               "cuda": f"{cuda // 1000}.{cuda % 1000 // 10}" if cuda else None,
+                               "memory": "discrete" if mem is not None else "unified",
+                               "vram_total_mib": mem.total // (1 << 20) if mem is not None else None,
                                "power_limit_w": _try(lambda: N.nvmlDeviceGetEnforcedPowerLimit(h) / 1000.0),
                                "pcie_gen_max": _try(lambda: N.nvmlDeviceGetMaxPcieLinkGeneration(h)),
                                "pcie_width_max": _try(lambda: N.nvmlDeviceGetMaxPcieLinkWidth(h))}

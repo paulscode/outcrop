@@ -47,6 +47,8 @@ def system_info(ctx, live) -> dict:
         mdir = config.OUTCROP_HOME / "models"
         if mdir.exists():
             for f in sorted(mdir.rglob("*.gguf")):
+                if f.is_symlink():                 # a second name for a file listed already (the GB10's n-gram table)
+                    continue
                 models.append({"path": str(f.relative_to(mdir)), "gib": round(f.stat().st_size / (1 << 30), 1)})
         cuda = _out(["/usr/local/cuda-12.9/bin/nvcc", "--version"])
         m = re.search(r"release ([\d.]+)", cuda)
@@ -54,7 +56,7 @@ def system_info(ctx, live) -> dict:
                 "kernel": _out(["uname", "-r"]), "cpu": (live.engine.get("hardware_static") or {}).get("cpu_name"),
                 "cores": (live.engine.get("hardware_static") or {}).get("cores"),
                 "threads": (live.engine.get("hardware_static") or {}).get("threads"),
-                "numa_nodes": len(live.numa), "gpu": live.gpu_static, "cuda": m.group(1) if m else None,
+                "numa_nodes": len(live.numa), "gpu": live.gpu_static, "cuda": m.group(1) if m else live.gpu_static.get("cuda"),
                 "strata_commit": commit, "patches": patches, "engines": engines, "models": models,
                 "python": _out(["python3", "--version"]), "console_version": config.VERSION}
     info = dict(_cached("static", 600, static))

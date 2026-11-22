@@ -57,11 +57,26 @@ def test_logs(c):
 def test_memory_layers(c):
     time.sleep(1.5)
     m = c.get("/api/memory").json()
+    assert m["unified"] is False
     assert [x["key"] for x in m["vram"]["layers"]] == ["experts", "dense", "kv", "mtp", "other", "free"]
     assert [x["key"] for x in m["ram"]["layers"]] == ["arena", "ngram", "convcache", "pagecache", "other", "free"]
     total = sum(x["gib"] for x in m["ram"]["layers"])
     assert abs(total - m["ram"]["total_gib"]) < 2.0
     assert m["conversation_cache"]["recent"]["requests"] >= 0
+
+
+def test_memory_unified(c):
+    """A GB10: one memory for the CPU and the GPU, so the GPU's layers are carved out of the RAM, not counted twice."""
+    time.sleep(1.5)
+    live = c.app.state.live
+    live.gpu_static = dict(live.gpu_static, memory="unified", vram_total_mib=None)
+    m = c.get("/api/memory").json()
+    assert m["unified"] and m["vram"]["layers"] == []
+    keys = [x["key"] for x in m["ram"]["layers"]]
+    assert keys[:3] == ["experts", "dense", "mtp"] and "arena" not in keys and keys[-1] == "free"
+    total = sum(x["gib"] for x in m["ram"]["layers"])
+    assert abs(total - m["ram"]["total_gib"]) < 2.0
+    assert "GPU's share" in m["ram"]["layers"][0]["note"]
 
 
 def test_energy_shape(c):
