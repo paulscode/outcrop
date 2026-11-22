@@ -95,7 +95,7 @@ profile itself.
 | `gateway` | The API gateway's ports and limits |
 | `console` | The console's ports |
 | `engine` | The engine binary in `~/.outcrop/bin` |
-| `common` | `q8_dense` (`false` skips the CPU's Q8 copy of the dense weights, which a unified-memory machine does not use), `ram_mode`, `env` (engine switches, `STRATA_*` and a few thread settings only) and `args` (engine flags) for every preset; `vision` (`cpu` or `off`) and `vision_cfg` |
+| `common` | `q8_dense` (`false` skips the CPU's Q8 copy of the dense weights, which a unified-memory machine does not use), `ram_mode`, `env` (engine switches, `STRATA_*` and a few thread settings only) and `args` (engine flags) for every preset; `vision` (`cpu`, `gpu` or `off`; `gpu` starts the encoder with the first picture and needs a CUDA build of it, as on the GB10) and `vision_cfg` |
 | `presets` | One entry per preset: `description`, `pack`, `context`, and optionally `rope` (`{"scaling": "yarn", "scale": 4}`), `kv`, `kv_resident`, `ram_mode` (`auto`, `full`, `resident`, `mmap`), `expert_cache`, `prefill`, `mtp`, `spec`, `env`, `args`, `drop_env`, `engine`, `vision`, and the server options `parallel`, `sampling`, `reasoning_effort`, `max_tokens`, `idle_unload_s` |
 
 When a profile is applied, the `server`, `gateway` and `console` sections of an existing presets.json are kept: those are

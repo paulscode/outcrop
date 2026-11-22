@@ -24,7 +24,8 @@
     "notes": [
       "IQ3_S only: Q2_0 and IQ3_XXS's CPU kernels are x86-only, so there is no speed or balanced preset on ARM.",
       "The 28.8 GB n-gram table is read from the SSD. With this much memory the page cache keeps it anyway: measured the same as --ple-io ram, which StartOS cannot lock in RAM (the container's 8 MiB RLIMIT_MEMLOCK).",
-      "The whole 262K context costs nothing measurable: the KV cache is sized at start (61 GiB at 128K, 63 at 262K) and prompts stay as fast."
+      "The whole 262K context costs nothing measurable: the KV cache is sized at start (61 GiB at 128K, 63 at 262K) and prompts stay as fast.",
+      "The picture encoder runs on the GPU: a 1080p photo in 2.5 s, against 73 s on the CPU (10 threads). It starts with the first picture (3.5 s), stops after 120 s without one, and takes 1.1 GiB while it runs."
     ]
   },
   "server": {
@@ -55,7 +56,7 @@
     "ram_mode": "mmap",
     "env": {},
     "args": [],
-    "vision": "cpu",
+    "vision": "gpu",
     "vision_cfg": {
       "max_tokens": 300,
       "threads": 10
