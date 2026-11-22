@@ -79,3 +79,15 @@ def test_forwarded_is_never_read(app):
         assert r.status_code == 401
     assert con.execute("SELECT source FROM events WHERE kind = 'signin.fail' ORDER BY id DESC LIMIT 1").fetchone()[0] == \
         "10.0.3.1"
+
+
+def test_server_names_on_startos(monkeypatch):
+    """In the container, apps are told the names StartOS published (gateway.hosts), not the container's own."""
+    from outcrop.common import config
+    net = config.Net(extra_hosts=["fd12:3456:789a:1:8226:5289:a554:40c8", "192.168.1.66", "YOUR-SERVER.local",
+                                  "abcdefghij.onion"])
+    monkeypatch.setenv("OUTCROP_PLATFORM", "startos")
+    assert config.server_names(net) == ("YOUR-SERVER.local", ["192.168.1.66", "fd12:3456:789a:1:8226:5289:a554:40c8"])
+    monkeypatch.delenv("OUTCROP_PLATFORM")
+    import socket
+    assert config.server_names(net)[0] == f"{socket.gethostname()}.local"

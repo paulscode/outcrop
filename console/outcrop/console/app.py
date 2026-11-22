@@ -390,10 +390,11 @@ def create_app(opts: Options) -> FastAPI:
         cfg = SP.load()
         mode = db.get_setting(con, "auth.mode")
         open_now = mode.get("mode") == "open" and float(mode.get("until") or 0) > time.time()
-        hosts = config.lan_addresses()
-        host = request.url.hostname or f"{__import__('socket').gethostname()}.local"
+        local, hosts = config.server_names(ctx.net)
+        host = request.url.hostname or local
         return {
-            "host": __import__("socket").gethostname(), "version": config.VERSION, "user": s.username,
+            "host": local.removesuffix(".local") or __import__("socket").gethostname(), "version": config.VERSION,
+            "user": s.username,
             "dev": opts.dev, "fake": opts.fake_units, "started_at": ctx.started_at,
             "console": {"https": request.url.scheme == "https", "hsts": bool(db.get_setting(con, "console.hsts", False)),
                         "tls": tls.status() if request.url.scheme == "https" else None},
@@ -408,7 +409,7 @@ def create_app(opts: Options) -> FastAPI:
             "urls": {"openai": f"http://{hosts[0] if hosts else host}:{ctx.net.openai_port}/v1",
                      "anthropic": f"http://{hosts[0] if hosts else host}:{ctx.net.openai_port}",
                      "ollama": f"http://{hosts[0] if hosts else host}:{ctx.net.ollama_port}",
-                     "hostname": f"{__import__('socket').gethostname()}.local", "addresses": hosts,
+                     "hostname": local, "addresses": hosts,
                      "openai_port": ctx.net.openai_port, "ollama_port": ctx.net.ollama_port},
         }
 

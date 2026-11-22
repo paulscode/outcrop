@@ -10,6 +10,7 @@ Everything secret lives in the state directory ($OUTCROP_HOME/state, 0700), neve
 """
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import secrets
@@ -176,6 +177,26 @@ def lan_addresses() -> list[str]:
     except (OSError, subprocess.SubprocessError):
         pass
     return out
+
+
+def server_names(net_: "Net | None" = None) -> tuple[str, list[str]]:
+    """This server as apps should reach it: (its .local name, its LAN addresses, IPv4 first).
+
+    On Ubuntu, the machine's hostname and interfaces.  In the StartOS container those are the container's own (a GUID and
+    a bridge address), so the names StartOS published for the service are used instead: presets.json's gateway.hosts,
+    which docker/prepare.sh fills from StartOS on every start."""
+    if os.environ.get("OUTCROP_PLATFORM") == "startos":
+        hosts = list((net_ or net()).extra_hosts)
+        local = next((h for h in hosts if h.endswith(".local")), "")
+        ips = []
+        for h in hosts:
+            try:
+                ips.append(ipaddress.ip_address(h.strip("[]")))
+            except ValueError:
+                continue
+        ips.sort(key=lambda a: (a.version, not a.is_private))
+        return local, [str(a) for a in ips]
+    return f"{socket.gethostname()}.local", lan_addresses()
 
 
 def own_host_names(extra: list[str] | None = None, lan: list[str] | None = None) -> set[str]:
