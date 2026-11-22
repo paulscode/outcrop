@@ -1,15 +1,14 @@
 import { test } from '@playwright/test'
-import { expect, PASSWORD, USER } from './helpers'
+import { expect, PASSWORD } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
 test('signing in works, and a wrong password says so', async ({ page }) => {
   await page.goto('/presets')
   await expect(page).toHaveURL(/\/signin\?next=%2Fpresets|\/signin\?next=\/presets/)
-  await page.getByLabel('Username').fill(USER)
   await page.getByLabel('Password', { exact: true }).fill('not the password at all')
   await page.getByRole('button', { name: 'Sign in' }).click()
-  await expect(page.getByTestId('signin-error')).toContainText('Wrong username or password')
+  await expect(page.getByTestId('signin-error')).toContainText('Wrong password')
   await page.getByLabel('Password', { exact: true }).fill(PASSWORD)
   await page.getByRole('button', { name: 'Sign in' }).click()
   await expect(page).toHaveURL(/\/presets$/)
@@ -22,7 +21,6 @@ test('signing in works, and a wrong password says so', async ({ page }) => {
 
 test('too many failures lock the address out, with a countdown', async ({ page }) => {
   await page.goto('/signin')
-  await page.getByLabel('Username').fill(USER)
   for (let i = 0; i < 7; i++) {
     await page.getByLabel('Password', { exact: true }).fill(`wrong password number ${i}`)
     await page.getByRole('button', { name: 'Sign in' }).click()

@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import os
 import logging
 import threading
 import time
@@ -125,7 +126,7 @@ def LC_mod():
 # --------------------------------------------------------------------------------------------------------- models
 
 class LoginIn(BaseModel):
-    username: str = Field(max_length=64)
+    username: str = Field("", max_length=64)
     password: str = Field(max_length=1024)
     remember: bool = False
 
@@ -285,6 +286,10 @@ def create_app(opts: Options) -> FastAPI:
         return s.username
 
     # ------------------------------------------------------------------------------------------------------ auth
+    # The console has one account, so the sign-in page asks only for its password (an API client may still send the
+    # username, which must then match).
+    startos = os.environ.get("OUTCROP_PLATFORM") == "startos"
+
     @app.post("/api/auth/login")
     def login(body: LoginIn, request: Request):
         con = ctx.con()
@@ -293,7 +298,8 @@ def create_app(opts: Options) -> FastAPI:
             time.sleep(slow)
         try:
             sid, s = auth.login(con, body.username, body.password, ip=ip_of(request),
-                                user_agent=request.headers.get("user-agent", ""), remember=body.remember)
+                                user_agent=request.headers.get("user-agent", ""), remember=body.remember,
+                                single_user=True)
         except auth.AuthError as e:
             if e.status == 401:
                 alerts.observe_signin_fail(ip_of(request))
@@ -317,6 +323,11 @@ def create_app(opts: Options) -> FastAPI:
         for c in list(live.clients):
             if c.session_hash == h:
                 c.put({"t": "signout", "d": {}, "at": time.time()})
+
+    @app.get("/api/auth/options")
+    def auth_options():
+        """For the sign-in page, before signing in (so nothing about the account): where a forgotten password is reset."""
+        return {"platform": "startos" if startos else "server"}
 
     @app.get("/api/auth/session")
     def get_session(s: auth.Session = Depends(session_dep)):

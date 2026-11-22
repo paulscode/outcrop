@@ -197,6 +197,6 @@ on your devices). A DHCP reservation for the server's address avoids this.
 ## Developing
 
 On another computer, without a GPU: `cd console && uv run python dev.py --fresh` starts a fake Strata, the bridge, the gateway, a
-traffic generator and the console on http://localhost:8800 (sign in as `dev` with the password it prints). `cd web && pnpm
+traffic generator and the console on http://localhost:8800 (sign in with the password it prints). `cd web && pnpm
 dev` serves the UI with hot reload on http://localhost:5173. `cd console && uv run pytest` runs the backend tests;
 [web/README.md](../web/README.md) has the UI's.

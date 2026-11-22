@@ -40,8 +40,7 @@ inside `tmux` (`sudo apt install tmux`, then `tmux`), so a dropped connection do
 
 At the end it prints the console's address: `YOUR-SERVER` below stands for your server's hostname (`hostname` prints it),
 and its network address works too. On each device, first open `http://YOUR-SERVER.local/ca` and install the
-certificate it offers, so your browser trusts the console. Then sign in with your user name on the server and the
-password you chose during setup.
+certificate it offers, so your browser trusts the console. Then sign in with the password you chose during setup.
 
 ### On StartOS
 

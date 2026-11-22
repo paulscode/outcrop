@@ -128,3 +128,48 @@ def test_ubuntu_only_commands_say_so_on_startos(monkeypatch, capsys):
     assert cli.main(["desktop", "status"]) == 2 and "Ubuntu" in capsys.readouterr().err
     assert admin.main(["ca"]) == 2 and "StartOS's certificate" in capsys.readouterr().err
     assert admin.main(["tls", "ensure"]) == 2
+
+
+def _app(tmp_path, monkeypatch, startos):
+    if startos:
+        monkeypatch.setenv("OUTCROP_PLATFORM", "startos")
+    else:
+        monkeypatch.delenv("OUTCROP_PLATFORM", raising=False)
+    fake = FakeStrata(api_key=UPSTREAM_KEY).start()
+    monkeypatch.setattr("outcrop.common.config.upstream_key", lambda create=False: UPSTREAM_KEY)
+    con = db.connect(tmp_path / "c.db")
+    auth.set_password(con, "admin", PW)
+    a = create_app(Options(dev=True, https=False, strata_url=fake.url, db_path=tmp_path / "c.db", fake_units=True,
+                           gateway_sock=tmp_path / "none.sock", web_dist=tmp_path / "dist", extra_origins=["http://testserver"]))
+    return a, fake, con
+
+
+def test_signin_without_a_username_on_startos(tmp_path, monkeypatch):
+    a, fake, con = _app(tmp_path, monkeypatch, startos=True)
+    h = {"X-Outcrop": "1", "Origin": "http://localhost"}
+    try:
+        with TestClient(a, base_url="http://localhost") as c:
+            assert c.get("/api/auth/options").json() == {"platform": "startos"}
+            assert c.post("/api/auth/login", json={"password": "wrong password entirely"}, headers=h).status_code == 401
+            r = c.post("/api/auth/login", json={"password": PW}, headers=h)
+            assert r.status_code == 200 and r.json()["user"] == "admin"
+            assert c.post("/api/auth/login", json={"username": "admin", "password": PW}, headers=h).status_code == 200
+            assert c.post("/api/auth/login", json={"username": "someone", "password": PW}, headers=h).status_code == 401
+        ev = con.execute("SELECT actor FROM events WHERE kind='signin.fail' ORDER BY id LIMIT 1").fetchone()
+        assert ev[0] == "admin"                      # the failed attempt is recorded against the account
+    finally:
+        fake.stop()
+
+
+def test_no_username_on_ubuntu_either(tmp_path, monkeypatch):
+    """One account everywhere: the password alone signs in; a username that is given must still match."""
+    a, fake, con = _app(tmp_path, monkeypatch, startos=False)
+    h = {"X-Outcrop": "1", "Origin": "http://localhost"}
+    try:
+        with TestClient(a, base_url="http://localhost") as c:
+            assert c.get("/api/auth/options").json() == {"platform": "server"}
+            assert c.post("/api/auth/login", json={"password": PW}, headers=h).status_code == 200
+            assert c.post("/api/auth/login", json={"username": "admin", "password": PW}, headers=h).status_code == 200
+            assert c.post("/api/auth/login", json={"username": "someone", "password": PW}, headers=h).status_code == 401
+    finally:
+        fake.stop()

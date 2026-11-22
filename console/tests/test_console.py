@@ -42,7 +42,7 @@ def login(c, pw=PW, user="dev", remember=False):
 def test_login_logout_and_cookie(console):
     assert console.get("/api/state").status_code == 401
     r = login(console, "wrong password entirely")
-    assert r.status_code == 401 and r.json()["error"] == "wrong username or password"
+    assert r.status_code == 401 and r.json()["error"] == "wrong password"
     r2 = login(console, PW, user="nobody")
     assert r2.status_code == 401 and r2.json()["error"] == r.json()["error"]
     r = login(console)

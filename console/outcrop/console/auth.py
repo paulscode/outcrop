@@ -173,14 +173,20 @@ def record_attempt(con: sqlite3.Connection, ip: str, username: str, ok: bool) ->
 # ----------------------------------------------------------------------------------------------------------- sign-in
 
 def login(con: sqlite3.Connection, username: str, password: str, *, ip: str, user_agent: str = "",
-          remember: bool = False) -> tuple[str, Session]:
-    """Check the password and start a session.  Raises AuthError (401 or 429)."""
+          remember: bool = False, single_user: bool = False) -> tuple[str, Session]:
+    """Check the password and start a session.  Raises AuthError (401 or 429).
+
+    single_user: an empty username means the console's one account (the sign-in page asks only for the password); a
+    username that is given must match."""
     with _one_check(ip):
         wait = lockout_wait(con, ip)
         if wait > 0:
             raise AuthError(429, f"too many failed sign-ins from {ip}; try again in {int(wait // 60) + 1} min",
                             retry_after=int(wait) + 1)
         username = (username or "").strip()
+        if not username and single_user:
+            first = get_user(con)
+            username = first["username"] if first else ""
         row = get_user(con, username)
         if row is None:
             passwords.burn_time(password or "")
@@ -193,7 +199,7 @@ def login(con: sqlite3.Connection, username: str, password: str, *, ip: str, use
                 db.add_event(con, "signin.fail", f"failed sign-in as {username[:40]!r}", actor=username[:40],
                              source=ip, level="warn", details={"user_agent": user_agent[:200]})
     if not ok:
-        raise AuthError(401, "wrong username or password")
+        raise AuthError(401, "wrong password")
     if passwords.needs_rehash(row["pw_hash"]):
         con.execute("UPDATE users SET pw_hash=? WHERE id=?", (passwords.hash_password(password), row["id"]))
     sid = secrets.token_urlsafe(32)

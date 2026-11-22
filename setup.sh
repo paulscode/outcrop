@@ -241,7 +241,7 @@ elif [ -n "$YES" ]; then
     && ok "a password was generated for you: it is in $OUTCROP_HOME/state/console-password.txt (readable by you only)" \
     || warn "no password set yet: run  outcrop console passwd  before signing in"
 else
-  echo "  The console asks for your user name ($(id -un)) and this password. Pick a long one; a few random words work well."
+  echo "  The console asks for this password. Pick a long one; a few random words work well."
   # unbuffered: setup's output goes through a pipe, and "not accepted: why" must show before the next prompt
   PYTHONUNBUFFERED=1 outcrop console passwd || warn "no password set yet: run  outcrop console passwd  before signing in"
 fi
@@ -268,7 +268,7 @@ cat <<EOF
 
   The console     https://$host   (or https://$ip)
                   First, on each device: open http://$host/ca (or http://$ip/ca) and install the certificate
-                  it offers, so the browser trusts the console. Sign in as $(id -un).
+                  it offers, so the browser trusts the console. Sign in with your password.
   Apps            OpenAI API  http://$host:8080/v1    Ollama API  http://$host:11434
                   Each app needs a token: outcrop token create NAME   (outcrop connect explains more)
   Day to day      outcrop             what runs now

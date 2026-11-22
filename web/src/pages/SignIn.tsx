@@ -47,13 +47,14 @@ function Strata() {
 export default function SignIn() {
   const navigate = useNavigate()
   const search = useSearch({ from: '/signin' })
-  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [remember, setRemember] = useState(false)
   const [show, setShow] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [locked, setLocked] = useState<number | null>(null)
+  // the console has one account, so only its password is asked for; where a forgotten one is reset depends on the platform
+  const [startos, setStartos] = useState(false)
   const [now, setNow] = useState(Date.now() / 1000)
   const pwRef = useRef<HTMLInputElement>(null)
 
@@ -71,6 +72,13 @@ export default function SignIn() {
   }, [locked])
 
   useEffect(() => {
+    api
+      .get<{ platform: string }>('/api/auth/options', { no401: true })
+      .then((o) => setStartos(o.platform === 'startos'))
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
     // Already signed in? Go straight in.
     api
       .get('/api/auth/session', { no401: true })
@@ -85,7 +93,7 @@ export default function SignIn() {
     setBusy(true)
     setError(null)
     try {
-      await api.post('/api/auth/login', { username: username.trim(), password, remember }, { no401: true, noReauth: true })
+      await api.post('/api/auth/login', { password, remember }, { no401: true, noReauth: true })
       queryClient.removeQueries({ queryKey: qk.state })
       await navigate({ to: search.next ?? '/', replace: true })
     } catch (err) {
@@ -96,7 +104,7 @@ export default function SignIn() {
           setNow(Date.now() / 1000)
           setError(err.message)
         } else if (err.status === 401) {
-          setError('Wrong username or password.')
+          setError('Wrong password.')
           setPassword('')
           pwRef.current?.focus()
         } else {
@@ -120,20 +128,6 @@ export default function SignIn() {
           <p className="mt-1 text-[13px] text-muted">The console of the local model server</p>
         </div>
         <form onSubmit={submit} className="panel grid gap-4 p-6" aria-describedby={error ? 'signin-error' : undefined} noValidate>
-          <div className="grid gap-1.5">
-            <Label htmlFor="username">Username</Label>
-            <Input
-              id="username"
-              name="username"
-              autoComplete="username"
-              autoCapitalize="none"
-              spellCheck={false}
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="your user name on the server"
-              required
-            />
-          </div>
           <div className="grid gap-1.5">
             <Label htmlFor="password">Password</Label>
             <div className="relative">
@@ -193,10 +187,17 @@ export default function SignIn() {
         </form>
         <p className="mt-5 flex items-start justify-center gap-2 text-center text-xs leading-relaxed text-faint">
           <TerminalSquare className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-          <span>
-            Forgot the password? Set a new one over SSH:{' '}
-            <code className="whitespace-nowrap rounded bg-panel-2 px-1 py-0.5 text-muted">outcrop console passwd</code>
-          </span>
+          {startos ? (
+            <span>
+              Forgot the password? In StartOS, Outcrop&apos;s <strong className="font-medium text-muted">Console password</strong>{' '}
+              action shows it, and <strong className="font-medium text-muted">Configure</strong> changes it.
+            </span>
+          ) : (
+            <span>
+              Forgot the password? Set a new one over SSH:{' '}
+              <code className="whitespace-nowrap rounded bg-panel-2 px-1 py-0.5 text-muted">outcrop console passwd</code>
+            </span>
+          )}
         </p>
       </div>
     </div>
