@@ -140,10 +140,13 @@ def mem_available_gib(path: str | None = None) -> int:
 
 
 # What the engine needs in RAM beside its experts on StartOS, in GiB: the vision encoder's process, and a reserve for the
-# KV and prompt buffers on the host, Strata's server, the gateway and the console (measured on a 32 GB StartOS server:
-# with the engine's own sizing, from the host's MemAvailable, it went past StartOS's line by about 2 GiB and stalled).
+# rest.  Measured on a 32 GB StartOS server (lab log, 2026-11-22): about 3.5 GiB beyond the experts, the conversation cache
+# and the vision encoder (KV and prompt buffers on the host, Strata's server, the gateway, the console, the supervisor),
+# and the start needs page cache to stream the pack through.  With 2 GiB reserved, a start with the conversation cache
+# off (22 GiB of experts) went past StartOS's line and stalled; the conversation cache also fills only as conversations
+# are parked, so it must be counted even when a start fits without it.
 STARTOS_VISION_GIB = 1
-STARTOS_RESERVE_GIB = 2
+STARTOS_RESERVE_GIB = 5
 
 
 def startos_budget(p: dict, top: dict, free: int) -> tuple[int, int]:
@@ -164,7 +167,7 @@ def startos_budget(p: dict, top: dict, free: int) -> tuple[int, int]:
     vision = STARTOS_VISION_GIB if p.get("vision", top.get("vision", "cpu")) != "off" else 0
     budget = max(4, free - -(-conv_mib // 1024) - vision - STARTOS_RESERVE_GIB)
     if p.get("resident_budget_gib") is not None:          # a preset's own choice (measured), never above what fits
-        budget = max(1, min(int(p["resident_budget_gib"]), budget + STARTOS_RESERVE_GIB))
+        budget = max(1, min(int(p["resident_budget_gib"]), budget))
     limit_mib = startos_memory_high_kib(meminfo_kib().get("MemTotal", 0)) // 1024
     return budget, limit_mib
 
