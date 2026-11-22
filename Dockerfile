@@ -122,6 +122,7 @@ COPY lib/ /opt/outcrop-test/lib/
 COPY bin/ /opt/outcrop-test/bin/
 COPY profiles/ /opt/outcrop-test/profiles/
 COPY setup/ /opt/outcrop-test/setup/
+COPY docker/ /opt/outcrop-test/docker/
 RUN cd /opt/outcrop-test && UV_PROJECT_ENVIRONMENT=/opt/outcrop-test/venv UV_PYTHON_DOWNLOADS=never UV_NO_CACHE=1 \
       uv sync --project console --frozen --python /usr/bin/python3 --quiet \
     && env -u OUTCROP_PLATFORM -u OUTCROP_HOME HOME=/tmp /opt/outcrop-test/venv/bin/python -m pytest console/tests -q -p no:cacheprovider --ignore=console/tests/test_pins.py

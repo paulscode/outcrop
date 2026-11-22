@@ -187,6 +187,23 @@ download the link itself, unsandboxed, so the gateway refuses those with a 400.
 
   It asks the search engines without cookies or an account. They see the query and your home IP address, but no key
   links your queries together.
+- **On StartOS** ([STARTOS.md](STARTOS.md)) there is no systemd and no Docker inside the service's container, so the
+  same isolation is built from a network namespace of its own (`docker/webnet.sh`), joined to the container by a veth
+  pair. Both the page fetcher and SearXNG run in it:
+  - nftables in two layers, the container's and the namespace's own: DNS to StartOS's resolver and the public internet
+    are allowed. Loopback, the private, carrier-grade NAT, link-local and other reserved IPv4 ranges, all of IPv6, the
+    container's own address and services (the gateway, the console, Strata), and StartOS's host are dropped;
+  - the fetcher runs as its own user, without new privileges or capabilities, from the same hash-locked environment as
+    on Ubuntu, and its start-up check probes StartOS's host (which answers HTTP from the container), so a missing rule
+    turns every page into a refusal;
+  - SearXNG is the very image Ubuntu runs (its files, at the same digest), chrooted with a read-only root, as its own
+    user 977, with its settings readable only by that user;
+  - the data volume is the service user's alone (0750), so neither of them can read it;
+  - `docker/test-webnet.sh` checks it from inside the namespace: 17 destinations that must be unreachable, the internet
+    and DNS that must work, SearXNG's results and the fetcher's verdict. On the StartOS test server: 22 of 22.
+  - What systemd adds on Ubuntu and the container does not have: `MemoryDenyWriteExecute`, the system-call filter, and
+    the per-service memory and CPU limits. The fetcher's own per-page limits (CPU, memory, 10 s, in a child process)
+    still apply.
 - **What it changes for privacy:**
   - Every search query is text the model wrote from your conversation, and it goes to the search engines.
   - Every page opened sees your home IP address.
