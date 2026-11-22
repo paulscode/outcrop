@@ -1,0 +1,76 @@
+{
+  "profile": {
+    "name": "gb10-128g",
+    "title": "NVIDIA GB10 (DGX Spark and similar) with 128 GB of unified memory",
+    "about": "Strata's settings measured on the DGX Spark: the experts read from the model file in place, so the GPU's cache holds all of them in the one memory the CPU and the GPU share.",
+    "match": {
+      "gpus": [
+        "NVIDIA GB10"
+      ],
+      "arch": [
+        "aarch64"
+      ],
+      "memory": "unified",
+      "ram_gib": [
+        110,
+        140
+      ]
+    },
+    "packs": [
+      "iq3_s"
+    ],
+    "default_preset": "quality",
+    "tested": null,
+    "notes": [
+      "IQ3_S only: Q2_0 and IQ3_XXS's CPU kernels are x86-only, so there is no speed or balanced preset on ARM.",
+      "The 28.8 GB n-gram table is read from the SSD: kept in RAM as on a bare DGX Spark, it would take Outcrop past StartOS's memory line. Strata measured prompts about 1.2x slower that way and decode unchanged.",
+      "Not measured on StartOS yet."
+    ]
+  },
+  "server": {
+    "host": "127.0.0.1",
+    "port": 18080,
+    "api_key": "none",
+    "model_id": "qwen3.8-flash-next"
+  },
+  "gateway": {
+    "enabled": true,
+    "listen": "::",
+    "port": 8080,
+    "ollama_port": 11434,
+    "https_port": 8443,
+    "bridge_port": 11435,
+    "hold_max_s": 120,
+    "body_max_mib": 64,
+    "hosts": []
+  },
+  "console": {
+    "port": 443,
+    "http_port": 80
+  },
+  "engine": "strata",
+  "cuda": 13,
+  "common": {
+    "q8_dense": false,
+    "ram_mode": "mmap",
+    "env": {},
+    "args": [],
+    "vision": "cpu",
+    "vision_cfg": {
+      "max_tokens": 300,
+      "threads": 10
+    }
+  },
+  "presets": {
+    "quality": {
+      "description": "IQ3_S pack, 3.5 bits/weight: task average 93.3, level with the original model",
+      "pack": "iq3_s",
+      "context": 65536,
+      "prefill": "auto:32768",
+      "args": [
+        "--mtp-q4 all",
+        "--mtp-hnorm stream"
+      ]
+    }
+  }
+}

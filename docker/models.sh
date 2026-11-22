@@ -5,12 +5,13 @@ set -euo pipefail
 P=$(cd "$(dirname "$0")/.." && pwd)
 : "${OUTCROP_HOME:?}"
 # the packs of the profile presets.json was made from (lib/profiles.py, as setup/install.sh reads them)
-PACKS=$(PYTHONPATH="$P/lib" python3 -c 'import json, sys, profiles
-print(" ".join(profiles.compose(json.load(open(sys.argv[1]))["profile"]["name"])["profile"]["packs"]))' "$OUTCROP_HOME/presets.json")
+read -r Q8 PACKS < <(PYTHONPATH="$P/lib" python3 -c 'import json, sys, profiles
+c = profiles.compose(json.load(open(sys.argv[1]))["profile"]["name"])
+print(int(bool(c.get("common", {}).get("q8_dense", True))), " ".join(c["profile"]["packs"]))' "$OUTCROP_HOME/presets.json")
 echo "== the profile's packs: $PACKS, the n-gram table and the picture encoder"
 # shellcheck disable=SC2086
 "$P/setup/download-models.sh" $PACKS vision
-echo "== preparing the packs: MTP draft layer, native expert index, Q8_0 dense copies"
+echo "== preparing the packs: MTP draft layer, native expert index$([ "$Q8" = 1 ] && echo ", Q8_0 dense copies")"
 # shellcheck disable=SC2086
-"$P/setup/prep-packs.sh" mtp $PACKS
+OUTCROP_Q8_DENSE=$Q8 "$P/setup/prep-packs.sh" mtp $PACKS
 echo "== models ready"

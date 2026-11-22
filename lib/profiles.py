@@ -15,6 +15,7 @@ import datetime as dt
 import difflib
 import json
 import os
+import platform
 import shutil
 import subprocess
 from pathlib import Path
@@ -28,6 +29,9 @@ PRESETS_FILE = Path(os.environ.get("OUTCROP_PRESETS") or OUTCROP_HOME / "presets
 # files, and what every install needs (the shared n-gram table, the MTP draft layer, the picture encoder, sources,
 # the engine and the CUDA installer).
 PACK_GB = {"q2_0": 76, "iq2_xs": 80, "iq3_xxs": 94, "iq3_s": 109}
+# without the Q8-dense copy, which only the Maxwell profiles make: the download and the pack files (measured on a StartOS
+# server, 2026-11-22: the copy is as big as shard 1 again; IQ3_S's shard 1 from its 84 GB download less the shared table)
+PACK_GB_NO_Q8 = {"q2_0": 40, "iq2_xs": 42, "iq3_xxs": 48, "iq3_s": 57}
 BASE_GB = 42
 
 
@@ -88,7 +92,8 @@ def names(include_abstract: bool = False) -> list[str]:
 
 
 def disk_gb(prof: dict) -> int:
-    return BASE_GB + sum(PACK_GB.get(p, 100) for p in prof["profile"].get("packs", []))
+    sizes = PACK_GB if prof.get("common", {}).get("q8_dense", True) else PACK_GB_NO_Q8
+    return BASE_GB + sum(sizes.get(p, 100) for p in prof["profile"].get("packs", []))
 
 
 # ------------------------------------------------------------------------------------------------- the machine
@@ -102,16 +107,17 @@ def _run(*cmd) -> str:
 
 def facts() -> dict:
     """What matters for choosing a profile, read from this machine."""
-    f: dict = {"gpus": [], "ram_gib": 0, "cpus": os.cpu_count() or 0, "os": {}, "driver": None}
+    f: dict = {"gpus": [], "ram_gib": 0, "cpus": os.cpu_count() or 0, "os": {}, "driver": None, "arch": platform.machine()}
     for line in _run("nvidia-smi", "--query-gpu=name,memory.total,driver_version,pcie.link.gen.max,pcie.link.width.current,"
                      "index,uuid", "--format=csv,noheader,nounits").splitlines():
         parts = [x.strip() for x in line.split(",")]
         if len(parts) >= 7:
             try:
-                vram = int(float(parts[1] or 0))
-            except ValueError:                           # "[N/A]" and the like
-                vram = 0
-            f["gpus"].append({"name": parts[0], "vram_mib": vram,
+                vram, memory = int(float(parts[1] or 0)), "discrete"
+            except ValueError:
+                # "[N/A]": a GPU with no memory of its own, such as the GB10 (DGX Spark), whose memory is the CPU's
+                vram, memory = 0, "unified"
+            f["gpus"].append({"name": parts[0], "vram_mib": vram, "memory": memory,
                               "pcie": f"Gen{parts[3]} x{parts[4]}", "index": parts[5], "uuid": parts[6]})
             f["driver"] = parts[2]
     try:
@@ -153,6 +159,11 @@ def fit(prof: dict, f: dict) -> tuple[str | None, list[str]]:
     if not gpu:
         names_ = ", ".join(g["name"] for g in f["gpus"]) or "no NVIDIA GPU found"
         return None, [f"made for {', '.join(m.get('gpus', []))}; this machine has {names_}"]
+    if m.get("arch") and f.get("arch") not in m["arch"]:
+        return None, [f"for {', '.join(m['arch'])} CPUs; this machine is {f.get('arch') or 'unknown'}"]
+    if m.get("memory", "discrete") != gpu.get("memory", "discrete"):
+        return None, [f"for a GPU with {m.get('memory', 'discrete')} memory; {gpu['name']} has "
+                      f"{gpu.get('memory', 'discrete')} memory"]
     if gpu["vram_mib"] < m.get("vram_mib_min", 0):
         return None, [f"needs {m['vram_mib_min']} MiB of VRAM; {gpu['name']} has {gpu['vram_mib']}"]
     lo, hi = m.get("ram_gib", [0, 10**6])

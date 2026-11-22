@@ -171,7 +171,7 @@ def engine_args(p: dict, top: dict) -> tuple[list[str], dict, list[str]]:
     """The engine's command line, environment and notes for preset `p`."""
     pack = p["pack"]
     Q = pack.upper()
-    q8 = p.get("q8_dense", True)
+    q8 = p.get("q8_dense", top.get("q8_dense", True))
     mdir = OUTCROP_HOME / "models" / (f"{Q}-q8dense" if q8 else Q)
     ctx = int(p["context"])
     notes = []
@@ -196,9 +196,19 @@ def engine_args(p: dict, top: dict) -> tuple[list[str], dict, list[str]]:
     if rope:
         args += ["--rope-scaling", rope["scaling"], "--rope-scale", str(rope["scale"])]
     # RAM mode: every expert pinned in RAM when there is room, else the most used ones (the engine reads the rest from the file).
+    # A GPU with unified memory ("mmap", the GB10) does neither: its cache and the RAM are the same memory, so the experts
+    # are read from the model file in place and the cache holds them all (Strata's measured setting on that part).
     need = FULL_ARENA_GIB.get(pack, 60)
     free = mem_available_gib()
-    if p.get("ram_mode", "auto") == "resident" or (p.get("ram_mode", "auto") == "auto" and free < need):
+    mode = p.get("ram_mode", top.get("ram_mode", "auto"))
+    if mode == "mmap":
+        args += ["--mmap-experts"]
+        if os.environ.get("OUTCROP_PLATFORM") == "startos":
+            # the file's pages count against StartOS's line like any other memory: the engine's guard keeps what it
+            # adds on its own (the conversation cache) below it
+            args += ["--memory-limit-mib", str(startos_memory_high_kib(meminfo_kib().get("MemTotal", 0)) // 1024)]
+        resident = False
+    elif mode == "resident" or (mode == "auto" and free < need):
         if os.environ.get("OUTCROP_PLATFORM") == "startos":
             budget, limit_mib = startos_budget(p, top, free)
             args += ["--resident-budget-gib", str(budget), "--memory-limit-mib", str(limit_mib)]
@@ -287,7 +297,7 @@ def render(name: str, cfg: dict | None = None) -> tuple[Path, list[str]]:
         "aliases": [f"{model_id}:{name}"],
         "arch": "qwen4exp",
         "log": str(OUTCROP_HOME / "logs" / f"engine-{name}.log"),
-        "lib_dirs": [CUDA_LIB], "cuda": 12,
+        "lib_dirs": [CUDA_LIB], "cuda": int(cfg.get("cuda", 12)),
         "host": bind(cfg)[0], "port": bind(cfg)[1],
         "api_key": api_key(cfg),
         "engine_ready_s": 1800,
