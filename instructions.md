@@ -1,11 +1,11 @@
 # Outcrop
 
-Outcrop runs Qwen3.8-Flash-Next on your server's NVIDIA card and serves it to your apps on your home network.
+Outcrop runs Qwen3.8-Flash-Next on your server's NVIDIA GPU and serves it to your apps on your home network.
 
 ## Before you start
 
-- **The NVIDIA driver.** On a Quadro M6000 or Tesla M40, install [startos-nvidia-legacy](https://github.com/paulscode/startos-nvidia-legacy) first; the standard StartOS NVIDIA edition does not support these cards.
-- **Disk space.** The first start downloads about 110 GB (32 GB of RAM) to 170 GB (64 GB or more) of model files, then prepares them. This takes from one hour to several, depending on your internet. The **Models** health check shows what it is doing. Interrupted downloads resume where they stopped.
+- **The NVIDIA driver.** On a Quadro M6000 or Tesla M40, install [startos-nvidia-legacy](https://github.com/paulscode/startos-nvidia-legacy) first; the standard StartOS NVIDIA edition does not support these cards. On a GB10 (DGX Spark, ASUS Ascent GX10) the driver comes with StartOS.
+- **Disk space.** The first start downloads model files, then prepares them: about 110 GB (an M6000 or M40 with 32 GB of RAM) to 170 GB (64 GB or more), or about 85 GB on a GB10. This takes from one hour to several, depending on your internet. The **Models** health check shows what it is doing. Interrupted downloads resume where they stopped.
 
 ## First steps
 

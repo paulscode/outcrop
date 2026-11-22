@@ -61,7 +61,7 @@ export const manifest = setupManifest({
   upstreamRepo: 'https://github.com/paulscode/outcrop',
   marketingUrl: 'https://github.com/paulscode/outcrop',
   donationUrl: null,
-  description: { short, long },
+  description: { short, long: long[arch] },
   osVersion: '0.4.2.1',
   volumes: ['main', 'models', 'startos'],
   images: {
