@@ -41,6 +41,26 @@ jobs:
           for f in setup.sh setup/*.sh setup/outcrop-boot bin/outcrop-gateway bin/outcrop-console bin/outcrop-supervisor bench/validate.sh examples/bug-hunt/harness/*.sh examples/bug-hunt/coldcard/*.sh; do bash -n "$f"; done
           shellcheck -S warning setup.sh setup/*.sh setup/outcrop-boot bin/outcrop-gateway bin/outcrop-console bin/outcrop-supervisor bench/validate.sh examples/bug-hunt/harness/*.sh examples/bug-hunt/coldcard/*.sh
 
+  startos-package:
+    # the StartOS package's TypeScript (startos/): the SDK's type check, lint rules and formatting, and the bundle start-cli
+    # packs.  The s9pk itself is built and signed on the release machine (make release-builds), never here.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Install
+        run: npm ci
+      - name: Type check, SDK lint, formatting, bundle
+        run: |
+          npx tsc --noEmit
+          node node_modules/@start9labs/start-sdk/lint.mjs
+          npx prettier --config node_modules/@start9labs/start-sdk/prettier.config.json --check startos
+          npx ncc build startos/index.ts -o javascript
+          test -s javascript/index.js
+
   web:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
