@@ -91,3 +91,31 @@ def test_server_names_on_startos(monkeypatch):
     monkeypatch.delenv("OUTCROP_PLATFORM")
     import socket
     assert config.server_names(net)[0] == f"{socket.gethostname()}.local"
+
+
+def test_security_checks_per_platform(monkeypatch):
+    """The security page checks what this platform lets Outcrop secure: on StartOS the host is StartOS's."""
+    from outcrop.common import config
+    from outcrop.console import system
+
+    class Ctx:
+        net = config.Net(console_proxied_port=8800, proxied_port=8443)
+
+        @staticmethod
+        def con():
+            return db.connect(":memory:")
+
+    class Live:
+        units = {"outcrop-gateway.service": {"active": "active"}}
+
+    monkeypatch.setattr(system, "_cached", lambda key, ttl, fn: fn())
+    monkeypatch.setattr(system, "listening_ports", lambda: [{"port": p, "address": "::", "lan": True}
+                                                             for p in (8080, 11434, 8443, 8800)])
+    monkeypatch.setenv("OUTCROP_PLATFORM", "startos")
+    keys = {c["key"]: c for c in system.posture(Ctx, Live)}
+    assert "firewall" not in keys and "ssh" not in keys and "rdp" not in keys
+    assert keys["host"]["ok"] and keys["https"]["ok"] and "StartOS" in keys["https"]["detail"]
+    assert keys["ports"]["ok"]                                                    # 8443 and 8800 are expected there
+    monkeypatch.delenv("OUTCROP_PLATFORM")
+    keys = {c["key"] for c in system.posture(Ctx, Live)}
+    assert {"firewall", "rdp", "ssh", "https"} <= keys and "host" not in keys

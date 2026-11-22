@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import socket
@@ -108,42 +109,63 @@ def posture(ctx, live) -> list[dict]:
         gw = (live.units or {}).get("outcrop-gateway.service") or {}
         add("gateway", gw.get("active") == "active", "The gateway is running", gw.get("active") or "unknown",
             "outcrop gateway status", level="error")
-        enabled = "ENABLED=yes" in _safe_read(Path("/etc/ufw/ufw.conf"))     # world-readable; the rules are root-only
-        marker = _safe_read(Path("/etc/outcrop-harden/firewall")).strip()
-        add("firewall", enabled and bool(marker), "The firewall allows only the LAN",
-            ("ufw on; " + marker.split(" ", 1)[1]) if enabled and marker else "ufw is on, but not with setup/harden.sh's "
-            "LAN rules" if enabled else "ufw is off", "setup/harden.sh firewall")
-        rdp = units.is_active("gnome-remote-desktop.service")
-        add("rdp", rdp != "active", "Remote desktop (RDP) is off", "off" if rdp != "active" else "port 3389 is listening",
-            "setup/harden.sh headless")
-        sshd = _safe_read(Path("/etc/ssh/sshd_config.d/01-outcrop-keys-only.conf"))
-        add("ssh", "PasswordAuthentication no" in sshd, "SSH accepts keys only",
-            "password logins refused" if "PasswordAuthentication no" in sshd else "passwords are accepted",
-            "setup/harden.sh ssh")
-        add("https", tls.status().get("ca", False), "The console uses HTTPS", "private CA, name-constrained"
-            if tls.status().get("ca") else "no certificate yet", "setup/install-console.sh")
-        now = time.time()
-        toks = con.execute("SELECT name, scopes, expires_at, last_used_at, created_at FROM tokens WHERE revoked_at IS NULL "
-                           "AND kind='user'").fetchall()
-        no_exp = [t["name"] for t in toks if not t["expires_at"]]
-        stale = [t["name"] for t in toks if (t["last_used_at"] or t["created_at"]) < now - 30 * 86400]
-        admins = [t["name"] for t in toks if "admin" in (t["scopes"] or "")]
-        add("expiry", not no_exp, "Every token expires", f"no expiry: {', '.join(no_exp)}" if no_exp else "all expire",
-            "Access: set an expiry", level="info")
-        add("stale", not stale, "No unused tokens", f"unused for 30 days: {', '.join(stale)}" if stale else "all in use",
-            "Access: revoke them", level="info")
-        add("admin", not admins, "No admin tokens lying around", f"admin: {', '.join(admins)}" if admins else "none",
-            "Access: revoke or narrow them", level="info")
-        tl = db.get_setting(con, "ollama.tokenless")
-        add("tokenless", not tl.get("enabled"), "The token-less Ollama option is off",
-            "off" if not tl.get("enabled") else f"on for {', '.join(tl.get('addresses') or [])}", "Access: turn it off")
-        expected = {22, 80, 443, 5353, ctx.net.openai_port, ctx.net.ollama_port} | ({ctx.net.https_port} if ctx.net.https_port else set())
+        if os.environ.get("OUTCROP_PLATFORM") == "startos":
+            _startos_host_checks(ctx, add)
+        else:
+            _ubuntu_host_checks(add)
+        _token_checks(con, add)
+        expected = {22, 80, 443, 5353, ctx.net.openai_port, ctx.net.ollama_port} | {
+            p for p in (ctx.net.https_port, ctx.net.proxied_port, ctx.net.console_proxied_port) if p}
         docker = [p for p in ports if p["lan"] and p["port"] not in expected]
         add("ports", not docker, "Nothing else listens on the LAN",
             "only the expected ports" if not docker else "also: " + ", ".join(str(p["port"]) for p in docker[:6]),
             "check `ss -tlnp`", level="info")
         return checks
     return _cached("posture", 15, compute)
+
+
+def _startos_host_checks(ctx, add) -> None:
+    """In the StartOS container the server's firewall, SSH and remote access are StartOS's, not Outcrop's to check or fix."""
+    add("host", True, "The server itself is StartOS's to secure", "its firewall, SSH and updates are managed by StartOS",
+        None, level="info")
+    behind = bool(ctx.net.console_proxied_port)
+    add("https", behind, "The console uses HTTPS", "through StartOS's proxy, with StartOS's certificate" if behind
+        else "the console is not behind StartOS's proxy", "restart the service", level="error")
+
+
+def _ubuntu_host_checks(add) -> None:
+    enabled = "ENABLED=yes" in _safe_read(Path("/etc/ufw/ufw.conf"))     # world-readable; the rules are root-only
+    marker = _safe_read(Path("/etc/outcrop-harden/firewall")).strip()
+    add("firewall", enabled and bool(marker), "The firewall allows only the LAN",
+        ("ufw on; " + marker.split(" ", 1)[1]) if enabled and marker else "ufw is on, but not with setup/harden.sh's "
+        "LAN rules" if enabled else "ufw is off", "setup/harden.sh firewall")
+    rdp = units.is_active("gnome-remote-desktop.service")
+    add("rdp", rdp != "active", "Remote desktop (RDP) is off", "off" if rdp != "active" else "port 3389 is listening",
+        "setup/harden.sh headless")
+    sshd = _safe_read(Path("/etc/ssh/sshd_config.d/01-outcrop-keys-only.conf"))
+    add("ssh", "PasswordAuthentication no" in sshd, "SSH accepts keys only",
+        "password logins refused" if "PasswordAuthentication no" in sshd else "passwords are accepted",
+        "setup/harden.sh ssh")
+    add("https", tls.status().get("ca", False), "The console uses HTTPS", "private CA, name-constrained"
+        if tls.status().get("ca") else "no certificate yet", "setup/install-console.sh")
+
+
+def _token_checks(con, add) -> None:
+    now = time.time()
+    toks = con.execute("SELECT name, scopes, expires_at, last_used_at, created_at FROM tokens WHERE revoked_at IS NULL "
+                       "AND kind='user'").fetchall()
+    no_exp = [t["name"] for t in toks if not t["expires_at"]]
+    stale = [t["name"] for t in toks if (t["last_used_at"] or t["created_at"]) < now - 30 * 86400]
+    admins = [t["name"] for t in toks if "admin" in (t["scopes"] or "")]
+    add("expiry", not no_exp, "Every token expires", f"no expiry: {', '.join(no_exp)}" if no_exp else "all expire",
+        "Access: set an expiry", level="info")
+    add("stale", not stale, "No unused tokens", f"unused for 30 days: {', '.join(stale)}" if stale else "all in use",
+        "Access: revoke them", level="info")
+    add("admin", not admins, "No admin tokens lying around", f"admin: {', '.join(admins)}" if admins else "none",
+        "Access: revoke or narrow them", level="info")
+    tl = db.get_setting(con, "ollama.tokenless")
+    add("tokenless", not tl.get("enabled"), "The token-less Ollama option is off",
+        "off" if not tl.get("enabled") else f"on for {', '.join(tl.get('addresses') or [])}", "Access: turn it off")
 
 
 def _safe_read(p: Path) -> str:
