@@ -50,6 +50,10 @@ sees each app's own address, so a token can be limited to the address of the dev
   the rest. Outcrop stays below that line, so it has a few GiB less than on Ubuntu: about 25 GiB of 32 GB, and about
   52 GiB of 64 GB. With 64 GB, the `quality` preset therefore runs in low-RAM mode, reading some of its model from
   disk, where on Ubuntu it would hold it all in RAM; a fast SSD matters more.
+- **Other services share that line.** StartOS draws one memory line for all of its services together. Outcrop sizes
+  itself from what is free when a preset starts; a service that grows afterwards can push everything past the line,
+  and then every service slows to a crawl. With 32 GB, give Outcrop the server to itself, or keep the other services
+  small.
 - **Locked memory.** StartOS does not let a service lock more than 8 MiB of RAM. Outcrop works without it, and the
   engine's GPU transfers are not affected; a few percent of speed may be lost.
 - **Backups** keep your settings, tokens, chats and logs, not the models (hundreds of GB). After a restore they are
