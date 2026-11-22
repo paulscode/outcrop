@@ -467,20 +467,33 @@ def rpc(path: Path, req: dict, timeout: float | None = 180) -> dict:
 
 # -------------------------------------------------------------------------------------------- Outcrop's own units
 
+WEB_SEARX_URL = "http://10.255.53.2:8080"    # SearXNG in the outcrop-web namespace (docker/webnet.sh's NS_IP)
+
+
 def outcrop_units(project: Path, home: Path, user: str = "outcrop") -> dict[str, Spec]:
     """Outcrop's units in the StartOS container, with the settings of their systemd/*.service files."""
     b = project / "bin"
+    d = project / "docker"
     env = {"OUTCROP_HOME": str(home), "PYTHONUNBUFFERED": "1", "PYTHONDONTWRITEBYTECODE": "1"}
+    # the chat's web access (SearXNG and the page fetcher) in the outcrop-web network namespace (docker/webnet.sh)
+    web = ["--searx-url", WEB_SEARX_URL]
     return {
         "outcrop-engine@.service": Spec([str(b / "outcrop-serve"), "%i"], user=user, env=env, restart="on-failure",
                                         restart_sec=20, stop_timeout=120, start_limit_interval=600, start_limit_burst=5),
-        "outcrop-gateway.service": Spec([str(b / "outcrop-gateway")], user=user, env=env, restart="always", restart_sec=2,
+        "outcrop-gateway.service": Spec([str(b / "outcrop-gateway"), *web], user=user, env=env, restart="always", restart_sec=2,
                                         stop_timeout=30, condition_not_exists=str(home / "state" / "bypass.json"),
                                         enabled=True),
-        "outcrop-console.service": Spec([str(b / "outcrop-console")], user=user, env=env, restart="always", restart_sec=3,
+        "outcrop-console.service": Spec([str(b / "outcrop-console"), *web], user=user, env=env, restart="always", restart_sec=3,
                                         stop_timeout=20, enabled=True, after=["outcrop-gateway.service"]),
         "outcrop-ollama-bridge.service": Spec([str(b / "outcrop-ollama-bridge"), "--auto"], user=user, env=env,
                                               restart="always", restart_sec=5, enabled=True),
+        # root: they make and enter the network namespace, and start SearXNG and the fetcher as their own users
+        "outcrop-webnet.service": Spec([str(d / "webnet.sh")], type="oneshot", env=env, remain_after_exit=True, enabled=True),
+        "outcrop-fetch.service": Spec([str(d / "fetch.sh")], env=env, restart="always", restart_sec=3, stop_timeout=10,
+                                      enabled=True, after=["outcrop-webnet.service"], requires=["outcrop-webnet.service"]),
+        "outcrop-searxng.service": Spec([str(d / "searxng.sh")], env=env, restart="always", restart_sec=5,
+                                        stop_timeout=15, enabled=True, after=["outcrop-webnet.service"],
+                                        requires=["outcrop-webnet.service"]),
         # StartOS only: the models, downloaded and prepared on the service's first start (setup/install.sh's steps 6 and 7
         # on Ubuntu); hours the first time, seconds after (every finished file is skipped)
         "outcrop-models.service": Spec([str(project / "docker" / "models.sh")], type="oneshot", user=user, env=env,

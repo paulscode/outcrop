@@ -60,3 +60,13 @@ def test_no_pin_is_copied_elsewhere():
             continue
         for k, v in values.items():
             assert v not in text, f"{f} repeats {k} from setup/pins.env; read it from there"
+
+
+def test_web_pins():
+    """SearXNG: the StartOS image copies the files of the very image setup/install-web.sh runs on Ubuntu."""
+    digest = re.compile(r"searxng/searxng@sha256:([0-9a-f]{64})")
+    ubuntu = set(digest.findall((ROOT / "setup" / "install-web.sh").read_text()))
+    startos = set(digest.findall((ROOT / "Dockerfile").read_text()))
+    assert len(ubuntu) == 1 and ubuntu == startos
+    version = re.search(r"#\s*(\d{4}\.\d+\.\d+-[0-9a-f]+)", (ROOT / "setup" / "install-web.sh").read_text()).group(1)
+    assert f"__SEARXNG_VERSION={version}" in (ROOT / "docker" / "searxng.sh").read_text()

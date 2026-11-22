@@ -57,7 +57,9 @@ RUN rm -rf /usr/local/cuda/compat /usr/local/cuda-*/compat \
     && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
          python3 aria2 curl ca-certificates jq numactl tini iproute2 nftables procps \
     && rm -rf /var/lib/apt/lists/* \
-    && { userdel --remove ubuntu 2>/dev/null || true; } && useradd --uid 1000 --user-group --no-create-home --home-dir /data --shell /usr/sbin/nologin outcrop
+    && { userdel --remove ubuntu 2>/dev/null || true; } && useradd --uid 1000 --user-group --no-create-home --home-dir /data --shell /usr/sbin/nologin outcrop \
+    && useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin outcrop-fetch \
+    && usermod -aG outcrop-fetch outcrop
 
 # the console's Python environment, from console/uv.lock, built where it runs (its interpreter is this image's python3)
 FROM base AS console-env
@@ -67,7 +69,25 @@ RUN UV_PROJECT_ENVIRONMENT=/opt/outcrop/venv UV_PYTHON_DOWNLOADS=never UV_NO_CAC
       uv sync --project /opt/outcrop/console --frozen --no-dev --python /usr/bin/python3 --quiet \
     && /opt/outcrop/venv/bin/python -c "import uvicorn, httpx, fastapi, argon2, zxcvbn, cryptography, pynvml, psutil, zstandard"
 
+# the page fetcher's own environment: only the "fetch" dependency group, every package hash-checked, the code root-owned
+# (as setup/install-web.sh installs it in /opt/outcrop-fetch on Ubuntu)
+FROM console-env AS fetch-env
+COPY console/outcrop/__init__.py /opt/outcrop-fetch/app/outcrop/__init__.py
+COPY console/outcrop/fetcher/ /opt/outcrop-fetch/app/outcrop/fetcher/
+RUN uv export --project /opt/outcrop/console --frozen --only-group fetch --no-emit-project --quiet -o /tmp/fetch-req.txt \
+    && uv venv --quiet --python /usr/bin/python3 /opt/outcrop-fetch/venv \
+    && UV_NO_CACHE=1 uv pip install --quiet --python /opt/outcrop-fetch/venv/bin/python --require-hashes -r /tmp/fetch-req.txt \
+    && echo /opt/outcrop-fetch/app > "$(/opt/outcrop-fetch/venv/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')/outcrop-fetch-app.pth" \
+    && find /opt/outcrop-fetch/app -name __pycache__ -prune -exec rm -rf {} + \
+    && /opt/outcrop-fetch/venv/bin/python -I -c "import trafilatura, pypdf, outcrop.fetcher.__main__"
+
 FROM base AS runtime
+# the chat's web search: the files of the SearXNG image setup/install-web.sh runs on Ubuntu (the same digest; test_web_pins
+# checks they agree), run chrooted in its own network namespace by docker/searxng.sh
+COPY --from=searxng/searxng@sha256:aecad882e86eeb022b76351c8dce4eb48d0cbb16a5f1691f77ea32c96d317502 / /opt/searxng-root/
+# (Docker gives a container its own /etc/resolv.conf; the chroot gets the namespace's, bound over this empty file)
+RUN touch /opt/searxng-root/etc/resolv.conf
+COPY --from=fetch-env /opt/outcrop-fetch /opt/outcrop-fetch
 COPY --from=engine /opt/strata /opt/strata
 COPY --from=engine /opt/llama.cpp /opt/llama.cpp
 COPY --from=engine /opt/outcrop-engine /opt/outcrop-engine

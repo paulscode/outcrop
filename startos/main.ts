@@ -27,21 +27,22 @@ export const main = sdk.setupMain(async ({ effects }) => {
   )
 
   // a check's answer comes from docker/health.py, which reads the supervisor and the services themselves
-  const check = (which: 'console' | 'models' | 'engine') => async () => {
-    const r = await sub.exec(['python3', H, which])
-    try {
-      const a = JSON.parse(String(r.stdout)) as {
-        result: 'success' | 'loading' | 'failure'
-        message: string
-      }
-      return { result: a.result, message: a.message }
-    } catch {
-      return {
-        result: 'failure' as const,
-        message: `health.py ${which}: ${String(r.stderr).slice(0, 200)}`,
+  const check =
+    (which: 'console' | 'models' | 'engine' | 'web') => async () => {
+      const r = await sub.exec(['python3', H, which])
+      try {
+        const a = JSON.parse(String(r.stdout)) as {
+          result: 'success' | 'loading' | 'failure'
+          message: string
+        }
+        return { result: a.result, message: a.message }
+      } catch {
+        return {
+          result: 'failure' as const,
+          message: `health.py ${which}: ${String(r.stderr).slice(0, 200)}`,
+        }
       }
     }
-  }
 
   return sdk.Daemons.of(effects)
     .addOneshot('prepare', {
@@ -74,6 +75,10 @@ export const main = sdk.setupMain(async ({ effects }) => {
     })
     .addHealthCheck('engine', {
       ready: { display: i18n('Engine'), fn: check('engine') },
+      requires: ['supervisor'],
+    })
+    .addHealthCheck('web', {
+      ready: { display: i18n('Web search'), fn: check('web') },
       requires: ['supervisor'],
     })
 })

@@ -9,9 +9,12 @@ P=$(cd "$(dirname "$0")/.." && pwd)
 U=outcrop
 mkdir -p "$OUTCROP_HOME"/{state,cfg,logs/units,models,data/packs,data/mtp}
 # the volumes are mounted root-owned: hand over whatever is not the service user's yet (seconds, even with the models)
-find "$OUTCROP_HOME" -xdev \( ! -user "$U" -o ! -group "$U" \) -exec chown -h "$U:$U" {} +
+# (searxng/ stays root:977: SearXNG's settings, below)
+find "$OUTCROP_HOME" -xdev -path "$OUTCROP_HOME/searxng" -prune -o \( ! -user "$U" -o ! -group "$U" \) -exec chown -h "$U:$U" {} +
 find "$OUTCROP_HOME/models" "$OUTCROP_HOME/data" -mindepth 0 -maxdepth 0 \( ! -user "$U" \) -exec chown "$U:$U" {} +
 chmod 700 "$OUTCROP_HOME/state" "$OUTCROP_HOME/cfg"
+# the data volume is the service user's alone: the page fetcher's user (outcrop-fetch) and SearXNG's (977) cannot read it
+chmod 750 "$OUTCROP_HOME"
 as() { setpriv --reuid="$U" --regid="$U" --clear-groups -- "$@"; }
 
 if [ ! -s "$OUTCROP_HOME/presets.json" ]; then
@@ -65,3 +68,14 @@ PY
 chmod 600 "$OUTCROP_HOME"/state/outcrop.db* "$OUTCROP_HOME/state/pepper" "$OUTCROP_HOME/state/upstream_key" \
   "$OUTCROP_HOME/state/local_token" 2>/dev/null || true
 mkdir -p /run/outcrop && chown "$U:$U" /run/outcrop
+
+# SearXNG's settings (setup/searxng/settings.yml with a secret made here, as setup/install-web.sh does): kept while the
+# template is unchanged, readable by SearXNG's user (977) and root only
+install -d -o root -g 977 -m 0750 "$OUTCROP_HOME/searxng"
+cfg=$OUTCROP_HOME/searxng/settings.yml
+if [ ! -s "$cfg" ] || ! grep -q '^# SearXNG for the console' "$cfg" \
+   || ! cmp -s <(sed '/secret_key/d' "$P/setup/searxng/settings.yml") <(sed '/secret_key/d' "$cfg"); then
+  secret=$(head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9')
+  sed "s/@SECRET@/$secret/" "$P/setup/searxng/settings.yml" > "$cfg.tmp" && mv "$cfg.tmp" "$cfg"
+fi
+chown root:977 "$cfg" && chmod 0640 "$cfg"

@@ -22,6 +22,7 @@ const dict = {
   'User name': 15,
   Password: 16,
   'Set a console password before signing in': 17,
+  'Web search': 18,
 } as const
 
 /**

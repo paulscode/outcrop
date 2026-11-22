@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""health.py console|models|engine  - (StartOS) one health check's answer, as JSON: {"result": ..., "message": ...}.
+"""health.py console|models|engine|web  - (StartOS) one health check's answer, as JSON: {"result": ..., "message": ...}.
 
 result is StartOS's: success, loading (starting, downloading), failure.  Run by startos/main.ts in the service's container,
 as root: it reads the supervisor (lib/units.py), the console's port and Strata's /health.  Standard library only.
@@ -36,6 +36,49 @@ def console() -> dict:
         return answer("success", "The console is up")
     st = units.is_active("outcrop-console.service")
     return answer("loading" if st in ("activating", "active") else "failure", f"The console is not answering ({st})")
+
+
+class _UnixHTTP(http.client.HTTPConnection):
+    def __init__(self, path: str, timeout: float = 5.0):
+        super().__init__("fetch", timeout=timeout)
+        self._path = path
+
+    def connect(self):
+        import socket
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(self.timeout)
+        s.connect(self._path)
+        self.sock = s
+
+
+def _get(conn: http.client.HTTPConnection, path: str) -> tuple[int, bytes]:
+    try:
+        conn.request("GET", path)
+        r = conn.getresponse()
+        return r.status, r.read()
+    except OSError:
+        return 0, b""
+    finally:
+        conn.close()
+
+
+def web() -> dict:
+    """The chat's web access: the page fetcher (and its own check that it cannot reach this server or the LAN) and
+    SearXNG, both in the outcrop-web network namespace."""
+    st, body = _get(_UnixHTTP("/run/outcrop-fetch/fetch.sock"), "/health")
+    try:
+        f = json.loads(body) if st == 200 else {}
+    except ValueError:
+        f = {}
+    sx, _ = _get(http.client.HTTPConnection("10.255.53.2", 8080, timeout=5), "/healthz")
+    if not f:
+        return answer("loading", "Web access is starting (the page fetcher does not answer yet)")
+    if not f.get("isolated"):
+        open_ = ", ".join(c["target"] for c in f.get("checked", []) if not c.get("blocked")) or "unknown"
+        return answer("failure", f"The page fetcher is NOT isolated from your network ({open_}): it refuses every page")
+    if sx != 200:
+        return answer("loading", "Pages can be opened; web search (SearXNG) is not answering yet")
+    return answer("success", "Web search and page reading work, isolated from your network")
 
 
 def models_step() -> str:
@@ -87,7 +130,7 @@ def engine() -> dict:
 
 
 def main(argv: list[str]) -> int:
-    checks = {"console": console, "models": models, "engine": engine}
+    checks = {"console": console, "models": models, "engine": engine, "web": web}
     if len(argv) != 1 or argv[0] not in checks:
         print(__doc__, file=sys.stderr)
         return 2
