@@ -11,8 +11,18 @@ export interface ServerState {
   fake: boolean
   started_at: number
   console: { https: boolean; hsts: boolean; tls: TlsStatus | null }
-  server: { preset: string | null; default: string | null; presets: string[]; model_id: string }
-  auth: { mode: AuthMode; until: number | null; addresses: string[]; listeners: string[] }
+  server: {
+    preset: string | null
+    default: string | null
+    presets: string[]
+    model_id: string
+  }
+  auth: {
+    mode: AuthMode
+    until: number | null
+    addresses: string[]
+    listeners: string[]
+  }
   tokenless: { enabled: boolean; addresses: string[] }
   gateway: GatewayState
   switch: SwitchState | null
@@ -33,10 +43,27 @@ export interface GatewayState {
   version?: string
   started_at?: number
   db_ok?: boolean
-  auth?: { mode?: AuthMode; until?: number | null; addresses?: string[]; listeners?: string[]; by?: string | null }
+  auth?: {
+    mode?: AuthMode
+    until?: number | null
+    addresses?: string[]
+    listeners?: string[]
+    by?: string | null
+  }
   tokenless?: { enabled: boolean; addresses: string[] }
-  strata?: { up?: boolean; loaded?: boolean; preset?: string | null; model?: string | null }
-  hold?: { ready?: boolean; reason?: string; explicit?: unknown; since?: number; waiting?: number }
+  strata?: {
+    up?: boolean
+    loaded?: boolean
+    preset?: string | null
+    model?: string | null
+  }
+  hold?: {
+    ready?: boolean
+    reason?: string
+    explicit?: unknown
+    since?: number
+    waiting?: number
+  }
   inflight?: Flight[]
   counts?: { requests?: number; denied?: number; errors?: number }
   tokens?: number
@@ -181,7 +208,13 @@ export interface EngineSnapshot {
     drafts_accepted?: number
   }
   requests: EngineRequest[]
-  hardware_static?: { gpu_name?: string; cpu_name?: string; cores?: number; threads?: number; numa_nodes?: number }
+  hardware_static?: {
+    gpu_name?: string
+    cpu_name?: string
+    cores?: number
+    threads?: number
+    numa_nodes?: number
+  }
   at?: number
 }
 
@@ -197,7 +230,14 @@ export interface UnitState {
 export type Units = Record<string, UnitState>
 
 // ------------------------------------------------------------------------------------------------------ requests
-export type FlightPhase = 'waiting' | 'held' | 'reading' | 'thinking' | 'answering' | 'done' | string
+export type FlightPhase =
+  | 'waiting'
+  | 'held'
+  | 'reading'
+  | 'thinking'
+  | 'answering'
+  | 'done'
+  | string
 
 /** A gateway request, as request.start announces it and later events complete it. */
 export interface Flight {
@@ -299,11 +339,32 @@ export interface Token {
   last_ip: string | null
   last_app: string | null
   status: 'active' | 'revoked' | 'expired'
-  usage?: { days: Record<string, number>; requests: number; prompt_tokens: number; output_tokens: number; errors: number }
+  usage?: {
+    days: Record<string, number>
+    requests: number
+    prompt_tokens: number
+    output_tokens: number
+    errors: number
+  }
 }
 
 export interface TokenDetail extends Token {
-  recent: Array<Pick<RequestRow, 'rid' | 'started_at' | 'client_ip' | 'app' | 'path' | 'status' | 'outcome' | 'prompt_tokens' | 'output_tokens' | 'ttft_ms' | 'decode_tok_s'>>
+  recent: Array<
+    Pick<
+      RequestRow,
+      | 'rid'
+      | 'started_at'
+      | 'client_ip'
+      | 'app'
+      | 'path'
+      | 'status'
+      | 'outcome'
+      | 'prompt_tokens'
+      | 'output_tokens'
+      | 'ttft_ms'
+      | 'decode_tok_s'
+    >
+  >
   seen: Array<{ app: string; client_ip: string; n: number; last: number }>
 }
 
@@ -313,11 +374,25 @@ export interface TokenCreated {
 }
 
 export interface AccessInfo {
-  mode: { mode: AuthMode; until?: number; addresses?: string[]; listeners?: string[]; by?: string; at?: number }
+  mode: {
+    mode: AuthMode
+    until?: number
+    addresses?: string[]
+    listeners?: string[]
+    by?: string
+    at?: number
+  }
   tokenless: { enabled: boolean; addresses: string[] }
   cors: string[]
   hosts: string[]
-  anonymous: Array<{ client_ip: string; app: string; n: number; denied: number; last: number; reason: string | null }>
+  anonymous: Array<{
+    client_ip: string
+    app: string
+    n: number
+    denied: number
+    last: number
+    reason: string | null
+  }>
   max_open_minutes: number
 }
 
@@ -341,7 +416,9 @@ export interface PresetCard {
   warm: number | null
   estimate_s: number | null
   expert_slots: number | null
-  measured: { at?: number } & Partial<Record<'chat' | 'code' | 'story' | 'doc4k', Measured>>
+  measured: { at?: number } & Partial<
+    Record<'chat' | 'code' | 'story' | 'doc4k', Measured>
+  >
   measured_from: string
   last_switch_s?: number
   last_switch_at?: number
@@ -358,7 +435,15 @@ export interface PresetsResponse {
 }
 
 export interface SwitchEvent {
-  type: 'plan' | 'phase' | 'progress' | 'experts_loaded' | 'drain' | 'tick' | 'waiting' | 'done'
+  type:
+    | 'plan'
+    | 'phase'
+    | 'progress'
+    | 'experts_loaded'
+    | 'drain'
+    | 'tick'
+    | 'waiting'
+    | 'done'
   phase?: string
   label?: string
   at?: number
@@ -407,7 +492,12 @@ export interface SwitchRecord {
   from_preset: string | null
   to_preset: string
   by: string
-  phases: Array<{ key: string; label: string; start: number; end: number | null }>
+  phases: Array<{
+    key: string
+    label: string
+    start: number
+    end: number | null
+  }>
   ok: number | null
   error: string | null
   warm: number | null
@@ -487,7 +577,16 @@ export interface SystemInfo {
     cores: number | null
     threads: number | null
     numa_nodes: number
-    gpu: { name?: string; driver?: string; vram_total_mib?: number; power_limit_w?: number | null; pcie_gen_max?: number | null; pcie_width_max?: number | null }
+    gpu: {
+      name?: string
+      driver?: string
+      cuda?: string | null
+      memory?: 'discrete' | 'unified'
+      vram_total_mib?: number | null
+      power_limit_w?: number | null
+      pcie_gen_max?: number | null
+      pcie_width_max?: number | null
+    }
     cuda: string | null
     strata_commit: string
     patches: string[]
@@ -581,6 +680,8 @@ export interface MemoryLayer {
 }
 
 export interface MemoryInfo {
+  /** one memory for the CPU and the GPU (a GB10): the GPU's layers are in `ram`, and `vram` is empty */
+  unified?: boolean
   vram: { total_mib: number; layers: MemoryLayer[] }
   ram: { total_gib: number; layers: MemoryLayer[] }
   conversation_cache: {
@@ -592,7 +693,12 @@ export interface MemoryInfo {
     requests_reused: number
     reused_tokens: number
     /** the gateway's last requests with a prompt (up to 500) */
-    recent?: { requests: number; prompt_tokens: number; reused_tokens: number; requests_reused: number }
+    recent?: {
+      requests: number
+      prompt_tokens: number
+      reused_tokens: number
+      requests_reused: number
+    }
     items?: Array<{ tokens: number; bytes: number; age_s: number }>
   }
 }
