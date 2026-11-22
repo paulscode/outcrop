@@ -19,8 +19,8 @@ TEST_ARCH ?= x86_64
 # the buildx builder start-cli builds with: Outcrop's own, whose cache budget (docker/buildkitd.toml) keeps the CUDA
 # engines between builds (each takes 20 min on amd64, over 2 h under qemu on arm64)
 BUILDER ?= outcrop
-# the architectures a release carries: aarch64 (the GB10) joins once its image and profile are done
-RELEASE_ARCHES ?= x86_64
+# the architectures a release carries: x86-64 (the M6000 and M40) and aarch64 (the GB10)
+RELEASE_ARCHES ?= x86_64 aarch64
 # the public key every paulscode package is signed with (what users add to StartOS's trusted keys)
 TRUSTED_KEY := MCowBQYDK2VwAyEAqmnGEsDpAPlm2/mmxkbl6dE/PRN58tWVGYREBr0c//8=
 REGISTRY_DIR ?= $(HOME)/workspace/start9-store/start9-040
