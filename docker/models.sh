@@ -4,7 +4,9 @@
 set -euo pipefail
 P=$(cd "$(dirname "$0")/.." && pwd)
 : "${OUTCROP_HOME:?}"
-PACKS=$(python3 -c 'import json, sys; print(" ".join(json.load(open(sys.argv[1]))["profile"]["packs"]))' "$OUTCROP_HOME/presets.json")
+# the packs of the profile presets.json was made from (lib/profiles.py, as setup/install.sh reads them)
+PACKS=$(PYTHONPATH="$P/lib" python3 -c 'import json, sys, profiles
+print(" ".join(profiles.compose(json.load(open(sys.argv[1]))["profile"]["name"])["profile"]["packs"]))' "$OUTCROP_HOME/presets.json")
 echo "== the profile's packs: $PACKS, the n-gram table and the picture encoder"
 # shellcheck disable=SC2086
 "$P/setup/download-models.sh" $PACKS vision
