@@ -5,14 +5,18 @@
 # Every private destination must be unreachable from the outcrop-web namespace, the public internet reachable, SearXNG
 # answering, and the page fetcher must report itself isolated.  Exit 0 only when all of that holds.
 set -uo pipefail
-NS=outcrop-web
 fail=0
+# enter the namespace the page fetcher actually runs in (through its process: a `start-cli package attach` session does not
+# see the supervisor's /run/netns mount)
+fpid=$(pgrep -f "outcrop.fetcher" | head -1)
+[ -n "$fpid" ] || { echo "FAIL the page fetcher is not running"; exit 1; }
+inns() { nsenter --net="/proc/$fpid/ns/net" "$@"; }
 ok() { printf 'PASS %s\n' "$*"; }
 bad() { printf 'FAIL %s\n' "$*"; fail=1; }
 
 # a TCP connection from inside the namespace: "open" (it connected), "closed" (refused), or "blocked" (no answer)
 probe() {  # host port
-  ip netns exec "$NS" python3 -c '
+  inns python3 -c '
 import socket, sys
 h, p = sys.argv[1], int(sys.argv[2])
 s = socket.socket(socket.AF_INET6 if ":" in h else socket.AF_INET)
@@ -51,7 +55,7 @@ must_block "IPv6 ULA" fd00::1 80
 must_block "IPv6 public" 2606:4700:4700::1111 443
 
 r=$(probe 1.1.1.1 443); [ "$r" = open ] && ok "the public internet (1.1.1.1:443) is reachable" || bad "the public internet: $r"
-if ip netns exec "$NS" python3 -c 'import socket; socket.getaddrinfo("example.com", 443)' 2>/dev/null; then
+if inns python3 -c 'import socket; socket.getaddrinfo("example.com", 443)' 2>/dev/null; then
   ok "DNS answers inside the namespace"
 else
   bad "DNS does not answer inside the namespace"
