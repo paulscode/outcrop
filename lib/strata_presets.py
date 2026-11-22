@@ -139,6 +139,33 @@ def mem_available_gib(path: str | None = None) -> int:
     return avail // (1 << 20)
 
 
+# What the engine needs in RAM beside its experts on StartOS, in GiB: the vision encoder's process, and a reserve for the
+# KV and prompt buffers on the host, Strata's server, the gateway and the console (measured on a 32 GB StartOS server:
+# with the engine's own sizing, from the host's MemAvailable, it went past StartOS's line by about 2 GiB and stalled).
+STARTOS_VISION_GIB = 1
+STARTOS_RESERVE_GIB = 2
+
+
+def startos_budget(p: dict, top: dict, free: int) -> tuple[int, int]:
+    """(GiB of experts to keep in RAM, the cgroup limit in MiB for the engine's memory guard) on StartOS.
+
+    In low-RAM mode the engine sizes its RAM copy of the experts from MemAvailable, which in the StartOS container is the
+    host's and knows nothing of the line StartOS reclaims its services' memory from (startos_memory_high_kib).  An
+    explicit --resident-budget-gib keeps it below: what Outcrop may take, less the conversation cache (shared memory),
+    the vision encoder and a reserve."""
+    conv_mib = 0
+    words = [w for a in top.get("args", []) + p.get("args", []) for w in (a.split() if isinstance(a, str) else [str(a)])]
+    if "--conversation-cache-mib" in words:
+        try:
+            conv_mib = int(words[words.index("--conversation-cache-mib") + 1])
+        except (IndexError, ValueError):
+            conv_mib = 0
+    vision = STARTOS_VISION_GIB if p.get("vision", top.get("vision", "cpu")) != "off" else 0
+    budget = max(4, free - -(-conv_mib // 1024) - vision - STARTOS_RESERVE_GIB)
+    limit_mib = startos_memory_high_kib(meminfo_kib().get("MemTotal", 0)) // 1024
+    return budget, limit_mib
+
+
 def expand(x: str) -> str:
     return x.replace("{outcrop_home}", str(OUTCROP_HOME)).replace("{strata}", str(STRATA))
 
@@ -175,8 +202,14 @@ def engine_args(p: dict, top: dict) -> tuple[list[str], dict, list[str]]:
     need = FULL_ARENA_GIB.get(pack, 60)
     free = mem_available_gib()
     if p.get("ram_mode", "auto") == "resident" or (p.get("ram_mode", "auto") == "auto" and free < need):
-        args += ["--resident-experts"]
-        notes.append(f"low-RAM mode: {free} GiB available, {need} GiB needed to pin every expert")
+        if os.environ.get("OUTCROP_PLATFORM") == "startos":
+            budget, limit_mib = startos_budget(p, top, free)
+            args += ["--resident-budget-gib", str(budget), "--memory-limit-mib", str(limit_mib)]
+            notes.append(f"low-RAM mode: {free} GiB available below StartOS's memory line, {need} GiB needed to pin "
+                         f"every expert; {budget} GiB of experts kept in RAM")
+        else:
+            args += ["--resident-experts"]
+            notes.append(f"low-RAM mode: {free} GiB available, {need} GiB needed to pin every expert")
         resident = True
     else:
         resident = False

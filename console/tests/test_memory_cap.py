@@ -32,3 +32,20 @@ def test_startos_stops_at_the_reclaim_line(tmp_path, monkeypatch):
     assert SP.mem_available_gib(meminfo(tmp_path, 64289000, 60 * GIB)) == 52
     # busier than the line already: nothing
     assert SP.mem_available_gib(meminfo(tmp_path, 32777228, 2 * GIB)) == 0
+
+
+def test_low_ram_mode_on_startos_has_a_budget(tmp_path, monkeypatch):
+    """On StartOS the engine gets an explicit RAM budget below StartOS's line; on Ubuntu it sizes itself, as before."""
+    monkeypatch.setattr(SP, "MEMINFO", meminfo(tmp_path, 32777228, 30 * GIB))
+    p = {"pack": "q2_0", "context": 262144}
+    top = {"args": ["--adapt-async 1", "--conversation-cache-mib 4096", "--conversation-cache-slots 2"], "vision": "cpu"}
+    monkeypatch.setenv("OUTCROP_PLATFORM", "startos")
+    args, _, notes = SP.engine_args(p, top)
+    assert "--resident-experts" not in args
+    # 25 GiB below the line, less 4 (conversation cache), 1 (vision), 2 (reserve)
+    assert args[args.index("--resident-budget-gib") + 1] == "18"
+    assert args[args.index("--memory-limit-mib") + 1] == str(SP.startos_memory_high_kib(32777228) // 1024)
+    assert "below StartOS's memory line" in notes[0]
+    monkeypatch.delenv("OUTCROP_PLATFORM")
+    args, _, notes = SP.engine_args(p, top)
+    assert "--resident-experts" in args and "--resident-budget-gib" not in args and "--memory-limit-mib" not in args
