@@ -154,8 +154,8 @@ class Toolbox:
         seen, results = set(), []
         for it in items:
             u = str(it.get("url") or "")
-            if not re.match(r"(?i)https?://", u):
-                continue
+            if not re.match(r"(?i)https?://", u) or not _host(u):
+                continue                                      # an engine's relative link (http:///go/...): no page
             k = normalize_url(u)
             if k in seen:
                 continue
@@ -222,6 +222,13 @@ class Toolbox:
                 + ("\n(The page was longer; this is its beginning.)" if cut else ""))
         return ToolResult(True, body, f"Read {domain(final)}" + (f" · {title[:80]}" if title else ""),
                           sources=[{"url": url, "title": title, "domain": domain(final), "kind": "page", "opened": True}])
+
+
+def _host(u: str) -> str:
+    try:
+        return urlsplit(u).hostname or ""
+    except ValueError:
+        return ""
 
 
 def _clean(s) -> str:

@@ -719,3 +719,40 @@ def test_a_fragment_cannot_carry_chat_data_out(c):
     assert [t["state"] for t in m["tools"]] == ["done", "done"]
     assert Fetch.opened == ["https://a1.example/page"]
     assert all("CHATDATA" not in s["url"] for s in m["sources"])
+
+
+def test_search_drops_links_without_a_host():
+    """An engine's relative link comes through SearXNG as http:///go/...: no page can be opened from it."""
+    import asyncio
+
+    class Bad(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            body = json.dumps({"results": [{"url": "http:///go/v1/AUsusi3", "title": "Broken"},
+                                           {"url": "https://[bad/", "title": "Not a URL"},
+                                           {"url": "https://ok.example/today", "title": "Fine"}]}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), Bad)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+
+    class Ctx:
+        allowed: list = []
+
+        def allow(self, links):
+            self.allowed += links
+
+    from outcrop.console.webtools import Toolbox
+    try:
+        ctx = Ctx()
+        res = asyncio.run(Toolbox(None, f"http://127.0.0.1:{srv.server_address[1]}").search("weather", ctx))
+        assert [x["url"] for x in res.sources] == ["https://ok.example/today"]
+        assert ctx.allowed == ["https://ok.example/today"] and "/go/v1" not in res.text
+    finally:
+        srv.shutdown()
