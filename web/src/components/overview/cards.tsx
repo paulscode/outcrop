@@ -76,7 +76,7 @@ export function GpuCard() {
       <PanelHeader
         icon={<Cpu />}
         title="GPU"
-        meta={name ?? undefined}
+        meta={name ?? 'unknown GPU'}
         actions={
           <Link to="/system" className="text-xs text-faint hover:text-fg">
             System
@@ -103,7 +103,11 @@ export function GpuCard() {
                 : '—'
             }
             color="var(--layer-1)"
-            title="Video memory in use, of the card's 24 GiB"
+            title={
+              g?.mem_total
+                ? `Video memory in use, of the card's ${fixed(g.mem_total / 1024, 0)} GiB`
+                : 'Video memory in use (the card did not report its size)'
+            }
           />
         )}
         <Meter

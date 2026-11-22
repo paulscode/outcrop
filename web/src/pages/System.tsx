@@ -145,13 +145,11 @@ function Watch() {
   const thr = (g?.throttle ?? []).filter((t) => t !== 'idle')
   const points = useMemo(
     () =>
-      hist
-        .slice(-600)
-        .map((h) => ({
-          t: h.t,
-          'gpu.temp': h.gpu.temp ?? NaN,
-          'gpu.power': h.gpu.power ?? NaN,
-        })),
+      hist.slice(-600).map((h) => ({
+        t: h.t,
+        'gpu.temp': h.gpu.temp ?? NaN,
+        'gpu.power': h.gpu.power ?? NaN,
+      })),
     [hist],
   )
   const series: ChartSeries[] = useMemo(
@@ -633,7 +631,12 @@ export default function System() {
           <div className="p-4">
             <KV
               rows={[
-                ['GPU', info?.gpu?.name ?? gpuName ?? '—'],
+                [
+                  'GPU',
+                  info?.gpu?.name ??
+                    gpuName ??
+                    'unknown (the driver did not report it)',
+                ],
                 [
                   'Driver, CUDA',
                   `${info?.gpu?.driver ?? '—'} · ${info?.cuda ?? '—'}`,

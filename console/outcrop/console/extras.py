@@ -261,7 +261,8 @@ def memory(h) -> dict:
     facts = engine_start_facts(Logs(h).engine_log()) if not h.ctl.fake else {
         "mtp": 906, "dense": 2948.4, "experts_mib": 16138, "experts_slots": 8310, "verify": 111, "draft_head": 105.1,
         "free": 771, "ngram": 26.8, "arena": 46.84}
-    total = g.get("mem_total") or live.gpu_static.get("vram_total_mib") or 24576
+    # the card's size as the driver reports it; unknown (0) leaves the column as tall as its layers, rather than guessing
+    total = g.get("mem_total") or live.gpu_static.get("vram_total_mib") or 0
     used = g.get("mem_used") or (total - (e.get("vram_free_mib") or facts.get("free") or 0))
     experts = e.get("expert_cache_mib") or facts.get("experts_mib") or 0
     dense = facts.get("dense") or 0
