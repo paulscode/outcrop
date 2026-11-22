@@ -49,3 +49,14 @@ def test_low_ram_mode_on_startos_has_a_budget(tmp_path, monkeypatch):
     monkeypatch.delenv("OUTCROP_PLATFORM")
     args, _, notes = SP.engine_args(p, top)
     assert "--resident-experts" in args and "--resident-budget-gib" not in args and "--memory-limit-mib" not in args
+
+
+def test_startos_budget_knobs(tmp_path, monkeypatch):
+    """A preset can set its own RAM budget (capped at what fits), and turn the conversation cache off for the room."""
+    monkeypatch.setattr(SP, "MEMINFO", meminfo(tmp_path, 32777228, 30 * GIB))
+    monkeypatch.setenv("OUTCROP_PLATFORM", "startos")
+    top = {"args": ["--conversation-cache-mib 4096"], "vision": "cpu"}
+    assert SP.startos_budget({"pack": "iq3_xxs"}, top, 25)[0] == 18
+    assert SP.startos_budget({"pack": "iq3_xxs", "args": ["--conversation-cache-mib 0"]}, top, 25)[0] == 22
+    assert SP.startos_budget({"pack": "iq3_xxs", "resident_budget_gib": 14}, top, 25)[0] == 14
+    assert SP.startos_budget({"pack": "iq3_xxs", "resident_budget_gib": 40}, top, 25)[0] == 20     # capped: 18 + reserve

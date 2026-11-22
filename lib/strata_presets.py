@@ -155,13 +155,16 @@ def startos_budget(p: dict, top: dict, free: int) -> tuple[int, int]:
     the vision encoder and a reserve."""
     conv_mib = 0
     words = [w for a in top.get("args", []) + p.get("args", []) for w in (a.split() if isinstance(a, str) else [str(a)])]
-    if "--conversation-cache-mib" in words:
-        try:
-            conv_mib = int(words[words.index("--conversation-cache-mib") + 1])
-        except (IndexError, ValueError):
-            conv_mib = 0
+    for i, w in enumerate(words):              # the last one counts, as for the engine (a preset's overrides the common one)
+        if w == "--conversation-cache-mib":
+            try:
+                conv_mib = int(words[i + 1])
+            except (IndexError, ValueError):
+                conv_mib = 0
     vision = STARTOS_VISION_GIB if p.get("vision", top.get("vision", "cpu")) != "off" else 0
     budget = max(4, free - -(-conv_mib // 1024) - vision - STARTOS_RESERVE_GIB)
+    if p.get("resident_budget_gib") is not None:          # a preset's own choice (measured), never above what fits
+        budget = max(1, min(int(p["resident_budget_gib"]), budget + STARTOS_RESERVE_GIB))
     limit_mib = startos_memory_high_kib(meminfo_kib().get("MemTotal", 0)) // 1024
     return budget, limit_mib
 

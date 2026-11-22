@@ -595,6 +595,9 @@ def validate_presets(text: str) -> dict:
         for k in ("parallel", "max_tokens", "idle_unload_s"):
             if k in p and (not isinstance(p[k], int) or p[k] < 0):
                 errors.append(f"{name}: {k} must be a whole number")
+        if "resident_budget_gib" in p and (not isinstance(p["resident_budget_gib"], int) or p["resident_budget_gib"] < 1):
+            errors.append(f"{name}: resident_budget_gib (GiB of experts kept in RAM in low-RAM mode on StartOS) must be "
+                          "a whole number, 1 or more")
         try:
             args, env, notes = SP.engine_args(p, cfg.get("common", {}))
             rendered[name] = {"args": args, "env": env, "notes": notes}
