@@ -108,11 +108,35 @@ def names(cfg: dict | None = None) -> list[str]:
     return list((cfg or load())["presets"])
 
 
-def mem_available_gib() -> int:
-    for line in open("/proc/meminfo"):
-        if line.startswith("MemAvailable:"):
-            return int(line.split()[1]) // (1 << 20)
-    return 0
+MEMINFO = "/proc/meminfo"
+
+
+def meminfo_kib(path: str | None = None) -> dict[str, int]:
+    out = {}
+    for line in open(path or MEMINFO):
+        k, _, v = line.partition(":")
+        if v.strip():
+            out[k] = int(v.split()[0])
+    return out
+
+
+def startos_memory_high_kib(total_kib: int) -> int:
+    """Where StartOS starts reclaiming its services' memory: all of them share one cgroup (services.slice) with
+    MemoryMax = RAM - 1 GiB and MemoryHigh = 90% of that (start-core's system::limit_container_memory, StartOS 0.4.2).
+    The limit sits above the container, so the container cannot read it; it is computed from the same formula."""
+    max_kib = max(total_kib - (1 << 20), 512 << 10)
+    return max_kib - max_kib // 10
+
+
+def mem_available_gib(path: str | None = None) -> int:
+    """The RAM the engine can still take, in GiB.  On StartOS no more than up to the services' reclaim line, counting
+    everything in use as the services' (a little cautious: the host's own share is in it too)."""
+    mi = meminfo_kib(path)
+    avail = mi.get("MemAvailable", 0)
+    if os.environ.get("OUTCROP_PLATFORM") == "startos":
+        used = mi.get("MemTotal", 0) - avail
+        avail = min(avail, max(0, startos_memory_high_kib(mi.get("MemTotal", 0)) - used))
+    return avail // (1 << 20)
 
 
 def expand(x: str) -> str:
