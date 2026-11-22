@@ -4,16 +4,18 @@
 # packed by start-cli for StartOS 0.4.2.1 and later.  They are signed with the packaging workspace's key
 # (start-cli's developer key there: the key StartOS users already trust for paulscode packages).
 #
-#   make test-builds      fast x86_64 build              -> builds/<version>/outcrop_x86_64-040.s9pk + SHA256SUMS
+#   make test-builds      fast build of $(TEST_ARCH)       -> builds/<version>/outcrop_<arch>-040.s9pk + SHA256SUMS
 #   make release-builds   every architecture, clean tree -> builds/<version>/outcrop_<arch>-040.s9pk + SHA256SUMS
 #   make verify-040       check the built s9pks (version, OS floor, architecture, GPU access, signer)
-#   make install-test     sideload the x86_64 build to $(HOST)
+#   make install-test     sideload the $(TEST_ARCH) build to $(HOST)
+#   (TEST_ARCH=aarch64 HOST=YOUR-SERVER.local for the GB10)
 #   make release-publish  after SHA256SUMS.asc is in builds/<version>/: the GitHub release, then the registry
 #
 # The Ubuntu install does not use any of this (./setup.sh).
 
 START_CLI ?= start-cli-2.8.0
 HOST ?= YOUR-SERVER.local
+TEST_ARCH ?= x86_64
 # the architectures a release carries: aarch64 (the GB10) joins once its image and profile are done
 RELEASE_ARCHES ?= x86_64
 # the public key every paulscode package is signed with (what users add to StartOS's trusted keys)
@@ -66,11 +68,11 @@ define pack
 endef
 
 test-builds: javascript/index.js
-	rm -rf $(BUILD_DIR)
 	mkdir -p $(BUILD_DIR)
-	$(call pack,x86_64)
+	rm -f $(BUILD_DIR)/$(PKG_ID)_$(TEST_ARCH)-040.s9pk $(BUILD_DIR)/SHA256SUMS*
+	$(call pack,$(TEST_ARCH))
 	cd $(BUILD_DIR) && sha256sum *.s9pk > SHA256SUMS
-	@echo; echo "Test build (x86_64) in $(BUILD_DIR):"; ls -lh $(BUILD_DIR); cat $(BUILD_DIR)/SHA256SUMS
+	@echo; echo "Test build ($(TEST_ARCH)) in $(BUILD_DIR):"; ls -lh $(BUILD_DIR); cat $(BUILD_DIR)/SHA256SUMS
 
 release-builds: javascript/index.js
 	@git diff --quiet && git diff --cached --quiet || { echo "the tree has uncommitted changes: commit them first (the s9pk records the commit)"; exit 1; }
@@ -96,7 +98,7 @@ verify-040:
 	done
 
 install-test:
-	scp -q $(BUILD_DIR)/$(PKG_ID)_x86_64-040.s9pk start9@$(HOST):/tmp/$(PKG_ID).s9pk
+	scp -q $(BUILD_DIR)/$(PKG_ID)_$(TEST_ARCH)-040.s9pk start9@$(HOST):/tmp/$(PKG_ID).s9pk
 	ssh start9@$(HOST) 'sudo -n start-cli package install -s /tmp/$(PKG_ID).s9pk && rm -f /tmp/$(PKG_ID).s9pk'
 
 # Only once SHA256SUMS.asc (signed on the airgapped machine) is in $(BUILD_DIR) and checks out.
