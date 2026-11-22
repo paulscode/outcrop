@@ -187,8 +187,9 @@ def test_open_mode_and_its_limits(stack):
     stack.set("auth.mode", {"mode": "open", "until": time.time() + 60, "at": time.time()})
     r = httpx.post(stack.url + "/v1/chat/completions", json=chat())
     assert r.status_code == 200
-    assert httpx.post(stack.url + "/v1/chat/completions", json=chat(),
-                      headers={"Authorization": "Bearer sk-anything-at-all"}).status_code == 200
+    r = httpx.post(stack.url + "/v1/chat/completions", json=chat(), headers={"Authorization": "Bearer sk-anything-at-all"})
+    assert r.status_code == 200
+    unknown_key_rid = r.headers["x-request-id"]
     assert httpx.get(stack.url + "/health").json()["auth"] == "open"
     assert httpx.get(stack.url + "/status").status_code == 401                         # admin never opens
     r = httpx.post(stack.url + "/v1/chat/completions", json=chat(), headers={"Host": "evil.example"})
@@ -198,9 +199,8 @@ def test_open_mode_and_its_limits(stack):
     r = httpx.post(stack.url + "/v1/chat/completions", json=chat(),
                    headers={"Origin": f"http://127.0.0.1:{stack.openai_port}"})
     assert r.status_code == 200                                                        # Strata's own page
-    stack.flush()
-    time.sleep(0.2)
-    stack.flush()
+    stack.recorded(unknown_key_rid)
+    stack.recorded(r.headers["x-request-id"])
     rows = stack.con.execute("SELECT auth, auth_reason FROM requests WHERE path='/v1/chat/completions'").fetchall()
     assert any(r["auth"] == "open" and "unknown key sk-a" in r["auth_reason"] for r in rows)
 

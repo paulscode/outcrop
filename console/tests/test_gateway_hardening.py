@@ -705,8 +705,7 @@ def test_capture_leaves_out_the_consoles_own_requests(stack):
 
     def captured(tok):
         rid = httpx.post(stack.url + "/v1/chat/completions", json=chat(), headers=auth(tok)).headers["x-request-id"]
-        time.sleep(0.2)
-        stack.flush()
+        stack.recorded(rid)
         return bool(stack.con.execute("SELECT 1 FROM request_bodies WHERE request_rid=?", (rid,)).fetchone())
 
     assert captured(t)

@@ -147,6 +147,18 @@ class Stack:
     def flush(self):
         asyncio.run_coroutine_threadsafe(self.gw.recorder.flush(), self.loop).result(5)
 
+    def recorded(self, rid: str, timeout: float = 10.0) -> None:
+        """Wait until a request is in the request log: an answered one is recorded once its response has finished, a
+        moment after the client has it, so a fixed sleep is a race on a busy machine."""
+        end = time.time() + timeout
+        while True:
+            self.flush()
+            if self.con.execute("SELECT 1 FROM requests WHERE rid=?", (rid,)).fetchone():
+                return
+            if time.time() > end:
+                raise AssertionError(f"{rid} was not recorded within {timeout:.0f} s")
+            time.sleep(0.05)
+
     def stop(self):
         self.api.should_exit = True
         self.ctl.should_exit = True
