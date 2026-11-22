@@ -17,15 +17,17 @@ MIGRATIONS = Path(__file__).resolve().parent / "migrations"
 
 
 def connect(path: Path | str | None = None) -> sqlite3.Connection:
-    """Open (and create, 0600) the database, apply pending migrations and return an autocommit connection."""
+    """Open (and create, 0600) the database, apply pending migrations and return an autocommit connection.
+    ":memory:" is sqlite's in-memory database: no file is made for it."""
     path = Path(path or config.DB_PATH)
-    if path.parent == config.STATE:
-        config.ensure_state_dir()
-    else:
-        path.parent.mkdir(parents=True, exist_ok=True)
-    if not path.exists():
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT, 0o600)
-        os.close(fd)
+    if str(path) != ":memory:":
+        if path.parent == config.STATE:
+            config.ensure_state_dir()
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.exists():
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT, 0o600)
+            os.close(fd)
     con = sqlite3.connect(str(path), timeout=15, isolation_level=None, check_same_thread=False)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA busy_timeout=15000")
