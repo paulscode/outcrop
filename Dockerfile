@@ -3,7 +3,7 @@
 # downloads them into its volume on first start.  startos/manifest builds it (start-cli runs `docker buildx build`).
 #
 #   amd64: CUDA 12.9, the last toolkit that compiles for the Quadro M6000 / Tesla M40 (Maxwell, sm_52).
-#   arm64: CUDA 13.0, for the NVIDIA GB10 (sm_121).  [not built yet: the GB10 stage comes with the GB10 profile]
+#   arm64: CUDA 13.0, for the NVIDIA GB10 (sm_121), built with Strata's own Spark script.
 #
 # Every base image is pinned by digest, every source by commit (setup/pins.env), every dependency by lock file.
 ARG TARGETARCH
@@ -23,12 +23,29 @@ COPY patches/ /outcrop/patches/
 RUN /outcrop/setup/fetch-sources.sh /build/src && mv /build/src/Strata /opt/strata && ln -s /opt/strata /build/src/Strata
 RUN /outcrop/setup/build-engine.sh /opt/strata 0211 && /outcrop/setup/build-vision.sh /opt/strata
 RUN python3 -m venv /opt/strata/.venv && /opt/strata/.venv/bin/pip install --no-cache-dir -q -r /opt/strata/requirements.txt
+RUN mkdir -p /opt/outcrop-engine/bin && cp /build/bin/strata-0211 /build/bin/strata-vision /opt/outcrop-engine/bin/
+
+FROM nvidia/cuda:13.0.2-devel-ubuntu24.04@sha256:5dc1bca23d05bd37b011be68ec470c03b403a5da07ec3a86e41af9470e9d0cc6 AS engine-arm64
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      build-essential cmake ninja-build git python3 python3-venv python3-dev pkg-config \
+      libcurl4-openssl-dev libssl-dev curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+ENV OUTCROP_HOME=/build
+COPY setup/pins.env setup/fetch-sources.sh setup/patch_llama_dp4a.py /outcrop/setup/
+COPY patches/ /outcrop/patches/
+RUN /outcrop/setup/fetch-sources.sh /build/src && mv /build/src/Strata /opt/strata && ln -s /opt/strata /build/src/Strata
+# Strata's own GB10 build (the one its release packages use): sm_121 plus PTX, a portable Armv8.2 CPU side
+# (dotprod + fp16 + i8mm), and the CUDA libraries the engine loads copied beside it ($ORIGIN), so the run-time image
+# needs no toolkit.  Outcrop's Maxwell patches are all gated to sm_52 and change nothing here.  No DeepSeek engine.
+RUN cp -a /build/src/llama.cpp /build/llama-spark \
+    && cd /opt/strata && BUILD_DSV41=0 STRATA_GGML_DIR=/build/llama-spark OUT=/opt/outcrop-engine/bin \
+         BUILD=/build/spark BUILD_VISION_DIR=/build/spark-vision spark/build_engine.sh
+RUN python3 -m venv /opt/strata/.venv && /opt/strata/.venv/bin/pip install --no-cache-dir -q -r /opt/strata/requirements.txt
 
 FROM engine-${TARGETARCH} AS engine
 # Strata at run time: its sources, data and Python environment, not its build trees
 RUN rm -rf /opt/strata/build /opt/strata/build-vision /opt/strata/.llama.cpp \
-    && mkdir -p /opt/outcrop-engine/bin /opt/llama.cpp \
-    && cp /build/bin/strata-0211 /build/bin/strata-vision /opt/outcrop-engine/bin/ \
+    && mkdir -p /opt/llama.cpp \
     && cp -a /build/src/llama.cpp/gguf-py /opt/llama.cpp/gguf-py
 
 # ------------------------------------------------------------------------------------------------- the console's web UI
@@ -49,6 +66,10 @@ COPY --from=engine-amd64 /usr/local/cuda-12.9/targets/x86_64-linux/lib/libcublas
                          /usr/local/cuda-12.9/targets/x86_64-linux/lib/libcublasLt.so.12* \
                          /usr/local/cuda-12.9/targets/x86_64-linux/lib/
 ENV OUTCROP_CUDA_LIB=/usr/local/cuda-12.9/targets/x86_64-linux/lib
+
+FROM nvidia/cuda:13.0.2-base-ubuntu24.04@sha256:2ab6381d970b211fb93853796dc6707eb8a72575a375c422b17cf4d8b2641701 AS base-arm64
+# the GB10 engine carries its CUDA libraries beside it (Strata's build copies them there)
+ENV OUTCROP_CUDA_LIB=/opt/outcrop-engine/bin
 
 FROM base-${TARGETARCH} AS base
 # StartOS mounts the host driver's libraries (libcuda, NVML, nvidia-smi) over the image (nvidiaContainer): no other
