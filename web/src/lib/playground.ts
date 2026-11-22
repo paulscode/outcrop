@@ -1,7 +1,7 @@
 // The playground's requests: the exact OpenAI chat-completions body it sends, and the same request as curl, Python or
 // JavaScript for "View as code" (with a $TOKEN placeholder, never a real token).
 
-import type { StreamState } from './sse'
+import type { StreamState, ToolCall } from './sse'
 
 export interface Params {
   system: string
@@ -55,6 +55,8 @@ export interface AssistantMsg {
   error?: string
   /** what the request asked for (thinking on/off etc.), shown with the answer */
   params: Params
+  /** what each tool call returned, one per call in order, as typed into the playground (the playground acts as the app) */
+  toolResults?: string[]
 }
 
 export type Msg = UserMsg | AssistantMsg
@@ -75,6 +77,11 @@ export function parseTools(text: string): { ok: true; tools: unknown[] } | { ok:
   }
 }
 
+/** The call's own id, or a stable one when the engine sent none. */
+export function toolCallId(msgId: string, t: ToolCall): string {
+  return t.id || `call_${msgId}_${t.index}`
+}
+
 /** The request body for the conversation so far (the last message is the new user message). */
 export function buildBody(params: Params, messages: Msg[], model: string): Record<string, unknown> {
   const out: Array<Record<string, unknown>> = []
@@ -91,7 +98,20 @@ export function buildBody(params: Params, messages: Msg[], model: string): Recor
         })
       } else out.push({ role: 'user', content: m.text })
     } else if ((m.status === 'done' || m.status === 'stopped') && (m.s.content || m.s.toolCalls.length)) {
-      out.push({ role: 'assistant', content: m.s.content })
+      const results = m.toolResults
+      if (m.s.toolCalls.length && results && results.length === m.s.toolCalls.length) {
+        // the call and what it returned, linked by the call's id, so the model can answer from the result
+        const ids = m.s.toolCalls.map((t) => toolCallId(m.id, t))
+        out.push({
+          role: 'assistant',
+          content: m.s.content,
+          tool_calls: m.s.toolCalls.map((t, i) => ({ id: ids[i], type: 'function', function: { name: t.name, arguments: t.arguments || '{}' } })),
+        })
+        m.s.toolCalls.forEach((_, i) => out.push({ role: 'tool', tool_call_id: ids[i], content: results[i] }))
+      } else if (m.s.content) {
+        // a call nobody answered is left out: an assistant tool call needs its result after it
+        out.push({ role: 'assistant', content: m.s.content })
+      }
     }
   }
   const body: Record<string, unknown> = {

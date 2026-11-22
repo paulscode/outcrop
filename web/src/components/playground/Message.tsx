@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router'
-import { AlertTriangle, ArrowUpRight, Brain, ChevronDown, CircleStop, RotateCcw, Wrench } from 'lucide-react'
-import { lazy, memo, Suspense, useState } from 'react'
+import { AlertTriangle, ArrowUp, ArrowUpRight, Brain, ChevronDown, CircleStop, CornerDownRight, RotateCcw, Wrench } from 'lucide-react'
+import { lazy, memo, Suspense, useId, useState } from 'react'
 import { fixed, int, isNum, pct } from '@/lib/format'
 import { gatewayStore, metricsStore, riverStore } from '@/lib/live'
 import { activeRid, inflightList, isGenerating } from '@/lib/requests'
@@ -10,6 +10,7 @@ import { shallow, useStore } from '@/lib/store'
 import type { RequestDetail } from '@/lib/types'
 import { cn, useNow } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/input'
 import { Tip } from '@/components/ui/menu'
 import { CopyButton } from '@/components/ui/misc'
 import { Bar } from '@/components/viz/basic'
@@ -73,7 +74,7 @@ function ThinkingBlock({ s, streaming }: { s: StreamState; streaming: boolean })
   )
 }
 
-function ToolCard({ name, args }: { name: string; args: string }) {
+function ToolCard({ name, args, result }: { name: string; args: string; result?: string }) {
   let pretty = args
   try {
     pretty = JSON.stringify(JSON.parse(args), null, 2)
@@ -91,7 +92,68 @@ function ToolCard({ name, args }: { name: string; args: string }) {
         </span>
       </div>
       <pre className="overflow-x-auto px-3 py-2 font-mono text-[12px] leading-relaxed text-fg/90 scrollbar-thin">{pretty || '{}'}</pre>
+      {result !== undefined ? (
+        <div className="border-t border-line">
+          <div className="flex items-center gap-2 px-3 pt-1.5 text-[13px] text-muted">
+            <CornerDownRight className="size-3.5 text-faint" aria-hidden /> Result you gave
+          </div>
+          <pre className="overflow-x-auto whitespace-pre-wrap px-3 pb-2 pt-1 font-mono text-[12px] leading-relaxed text-fg/90 scrollbar-thin">
+            {result || '(empty)'}
+          </pre>
+        </div>
+      ) : null}
     </div>
+  )
+}
+
+/**
+ * The playground runs no tools: here the user plays the app, typing what each call returned, and the model continues
+ * from it. One box per call, in order.
+ */
+function ToolResultsForm({ names, onSubmit, disabled }: { names: string[]; onSubmit: (results: string[]) => void; disabled?: boolean }) {
+  const id = useId()
+  const [values, setValues] = useState<string[]>(() => names.map(() => ''))
+  const ready = values.every((v) => v.trim().length > 0)
+  return (
+    <form
+      className="grid gap-2 rounded-lg border border-dashed border-line-strong px-3 py-2.5"
+      onSubmit={(e) => {
+        e.preventDefault()
+        if (ready && !disabled) onSubmit(values.map((v) => v.trim()))
+      }}
+    >
+      <p className="text-xs leading-relaxed text-faint">
+        The playground runs no tools. Type what {names.length === 1 ? 'the tool' : 'each tool'} would return (text or JSON), as
+        your app would, and the model answers from it.
+      </p>
+      {names.map((n, i) => (
+        <div key={i} className="grid gap-1">
+          <label htmlFor={`${id}-${i}`} className="text-[13px] text-muted">
+            Result of <code className="font-mono text-[12.5px] text-fg">{n || 'the call'}</code>
+          </label>
+          <Textarea
+            id={`${id}-${i}`}
+            rows={2}
+            spellCheck={false}
+            placeholder={'{"temp_c": 4, "sky": "rain"}'}
+            value={values[i]}
+            onChange={(e) => setValues((p) => p.map((v, j) => (j === i ? e.target.value : v)))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault()
+                e.currentTarget.form?.requestSubmit()
+              }
+            }}
+            className="resize-y font-mono text-[12px] leading-relaxed"
+          />
+        </div>
+      ))}
+      <div className="flex justify-end">
+        <Button type="submit" size="xs" variant="primary" disabled={!ready || disabled}>
+          <ArrowUp aria-hidden /> {names.length === 1 ? 'Send the result' : 'Send the results'}
+        </Button>
+      </div>
+    </form>
   )
 }
 
@@ -197,11 +259,16 @@ export const AssistantMessage = memo(function AssistantMessage({
   m,
   record,
   onRetry,
+  onToolResults,
+  busy,
   label,
 }: {
   m: AssistantMsg
   record: RequestDetail | null
   onRetry?: () => void
+  /** given when the user can answer this message's tool calls (the last message of its conversation) */
+  onToolResults?: (results: string[]) => void
+  busy?: boolean
   label?: string
 }) {
   const s = m.s
@@ -231,9 +298,12 @@ export const AssistantMessage = memo(function AssistantMessage({
           <Markdown text={s.content} />
         </Suspense>
       ) : null}
-      {s.toolCalls.map((t) => (
-        <ToolCard key={t.index} name={t.name} args={t.arguments} />
+      {s.toolCalls.map((t, i) => (
+        <ToolCard key={t.index} name={t.name} args={t.arguments} result={m.toolResults?.[i]} />
       ))}
+      {m.status === 'done' && s.toolCalls.length && !m.toolResults && onToolResults ? (
+        <ToolResultsForm names={s.toolCalls.map((t) => t.name)} onSubmit={onToolResults} disabled={busy} />
+      ) : null}
       {streaming && s.phase === 'answering' ? (
         <div className="flex items-center gap-2 text-xs">
           <span className="size-1.5 animate-pulse rounded-full bg-answer" aria-hidden />

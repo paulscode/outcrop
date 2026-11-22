@@ -137,7 +137,7 @@ export function ParamsForm({
               <label htmlFor={`${id}-tools`} className="text-[13px] font-medium">
                 Tools
               </label>
-              <p className="mt-0.5 text-xs leading-relaxed text-faint">Functions the model may call (OpenAI format). Calls are shown, not run.</p>
+              <p className="mt-0.5 text-xs leading-relaxed text-faint">Functions the model may call (OpenAI format). Calls are shown, not run: you type what each returned, and the model answers from it.</p>
             </div>
             <Switch id={`${id}-tools`} checked={value.toolsOn} onCheckedChange={(v) => set('toolsOn', v)} className="mt-0.5" />
           </div>

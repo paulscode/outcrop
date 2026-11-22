@@ -208,6 +208,26 @@ export default function Playground() {
     setBusy(false)
   }
 
+  /** The user's results for a message's tool calls: kept on that message, then the model continues from them. */
+  const answerTools = async (c: ColId, id: string, results: string[]) => {
+    if (busy) return
+    const msgs = colsRef.current[c].messages
+    const i = msgs.findIndex((m) => m.id === id)
+    if (i < 0 || i !== msgs.length - 1) return
+    const prev = msgs[i] as AssistantMsg
+    const params = colsRef.current[c].params
+    const asst: AssistantMsg = { id: uid(), role: 'assistant', status: 'queued', s: emptyStream(), startedAt: null, rid: null, params }
+    const history = [...msgs.slice(0, i), { ...prev, toolResults: results }]
+    const next = { ...colsRef.current, [c]: { ...colsRef.current[c], messages: [...history, asst] } }
+    colsRef.current = next
+    setCols(next)
+    stopped.current = false
+    stick.current = true
+    setBusy(true)
+    await runOne(c, asst.id, history, params, compare ? `Answer ${c}` : 'The answer')
+    setBusy(false)
+  }
+
   const reset = () => {
     setCols((p) => ({ A: { ...p.A, messages: [] }, B: { ...p.B, messages: [] } }))
     setRecords({})
@@ -273,11 +293,19 @@ export default function Playground() {
           </Button>
         </div>
       ) : null}
-      {cols[c].messages.map((m) =>
+      {cols[c].messages.map((m, i, all) =>
         m.role === 'user' ? (
           <UserMessage key={m.id} m={m} />
         ) : (
-          <AssistantMessage key={m.id} m={m} record={records[m.id] ?? null} onRetry={() => retry(c, m.id)} label={compare ? `Answer ${c}` : undefined} />
+          <AssistantMessage
+            key={m.id}
+            m={m}
+            record={records[m.id] ?? null}
+            onRetry={() => retry(c, m.id)}
+            onToolResults={i === all.length - 1 ? (r) => void answerTools(c, m.id, r) : undefined}
+            busy={busy}
+            label={compare ? `Answer ${c}` : undefined}
+          />
         ),
       )}
     </section>
@@ -324,6 +352,14 @@ export default function Playground() {
                 <p className="mx-auto mt-1.5 max-w-lg text-[13px] leading-relaxed text-muted">
                   Messages go through the gateway like any app's and show up on Live and Requests as “Console”.
                   {compare ? ' Each message goes to A, then to B, each with its own settings: the server answers one request at a time.' : ''}
+                </p>
+                <p className="mx-auto mt-1.5 max-w-lg text-[13px] leading-relaxed text-muted">
+                  This is the model as your apps see it: no web search, nothing saved. For everyday questions, with web search
+                  and saved conversations, use{' '}
+                  <Link to="/chat" className="link">
+                    Chat
+                  </Link>
+                  .
                 </p>
               </div>
               <ul className="grid gap-2 text-left sm:grid-cols-2">

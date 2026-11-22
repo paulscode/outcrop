@@ -58,6 +58,44 @@ describe('buildBody', () => {
   })
 })
 
+describe('buildBody with tool calls', () => {
+  const called = (extra: Partial<Extract<Msg, { role: 'assistant' }>> = {}): Msg => ({
+    ...(done('') as Extract<Msg, { role: 'assistant' }>),
+    id: 'a1',
+    s: { ...emptyStream(), phase: 'done', finish: 'tool_calls', toolCalls: [{ index: 0, id: 'c9', name: 'get_weather', arguments: '{"city":"Oslo"}' }] },
+    ...extra,
+  })
+  const ask: Msg = { id: '1', role: 'user', text: 'weather in Oslo?', images: [] }
+
+  it('sends the call and its result, linked by the call id', () => {
+    const b = buildBody({ ...DEFAULT_PARAMS, toolsOn: true }, [ask, called({ toolResults: ['{"temp_c": 4}'] })], 'm')
+    expect(b.messages).toEqual([
+      { role: 'user', content: 'weather in Oslo?' },
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [{ id: 'c9', type: 'function', function: { name: 'get_weather', arguments: '{"city":"Oslo"}' } }],
+      },
+      { role: 'tool', tool_call_id: 'c9', content: '{"temp_c": 4}' },
+    ])
+  })
+
+  it('makes an id when the engine sent none, and leaves out a call nobody answered', () => {
+    const noId = called({ toolResults: ['sunny'] })
+    if (noId.role === 'assistant') noId.s.toolCalls = [{ index: 0, name: 'get_weather', arguments: '' }]
+    const b = buildBody(DEFAULT_PARAMS, [ask, noId], 'm')
+    const msgs = b.messages as Array<Record<string, unknown>>
+    expect(msgs[1].tool_calls).toEqual([{ id: 'call_a1_0', type: 'function', function: { name: 'get_weather', arguments: '{}' } }])
+    expect(msgs[2]).toEqual({ role: 'tool', tool_call_id: 'call_a1_0', content: 'sunny' })
+
+    const unanswered = buildBody(DEFAULT_PARAMS, [ask, called(), { id: '2', role: 'user', text: 'never mind', images: [] }], 'm')
+    expect(unanswered.messages).toEqual([
+      { role: 'user', content: 'weather in Oslo?' },
+      { role: 'user', content: 'never mind' },
+    ])
+  })
+})
+
 describe('parseTools', () => {
   it('explains what is wrong', () => {
     expect(parseTools('{}')).toMatchObject({ ok: false })
