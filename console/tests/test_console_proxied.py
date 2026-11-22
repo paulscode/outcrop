@@ -119,3 +119,12 @@ def test_security_checks_per_platform(monkeypatch):
     monkeypatch.delenv("OUTCROP_PLATFORM")
     keys = {c["key"] for c in system.posture(Ctx, Live)}
     assert {"firewall", "rdp", "ssh", "https"} <= keys and "host" not in keys
+
+
+def test_ubuntu_only_commands_say_so_on_startos(monkeypatch, capsys):
+    from outcrop import cli
+    from outcrop.console import admin
+    monkeypatch.setenv("OUTCROP_PLATFORM", "startos")
+    assert cli.main(["desktop", "status"]) == 2 and "Ubuntu" in capsys.readouterr().err
+    assert admin.main(["ca"]) == 2 and "StartOS's certificate" in capsys.readouterr().err
+    assert admin.main(["tls", "ensure"]) == 2

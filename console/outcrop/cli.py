@@ -599,6 +599,9 @@ def main(argv=None) -> int:
     a = parser().parse_args(argv)
     fn = {"token": cmd_token, "auth": cmd_auth, "gateway": cmd_gateway, "audit": cmd_audit, "console": cmd_console,
           "alerts": cmd_alerts, "desktop": cmd_desktop, "schedule": cmd_schedule}.get(a.cmd)
+    if a.cmd == "desktop" and os.environ.get("OUTCROP_PLATFORM") == "startos":
+        print("outcrop desktop is for an Ubuntu server; a StartOS server has no desktop of its own", file=sys.stderr)
+        return 2
     if fn is None:
         parser().print_help()
         return 2

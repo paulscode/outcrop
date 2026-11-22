@@ -312,6 +312,10 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     fn = {"passwd": cmd_passwd, "sessions": cmd_sessions, "url": cmd_url, "ca": cmd_ca, "tls": cmd_tls,
           "backup": cmd_backup, "restore": cmd_restore, "alerts": cmd_alerts}.get(a.cmd)
+    if a.cmd in ("ca", "tls") and os.environ.get("OUTCROP_PLATFORM") == "startos":
+        print(f"outcrop console {a.cmd}: on StartOS the console uses StartOS's certificate, and has no CA of its own "
+              "(trust StartOS's root CA on your devices instead)", file=sys.stderr)
+        return 2
     if fn is None:
         print(__doc__)
         return 2

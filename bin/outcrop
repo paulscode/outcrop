@@ -75,11 +75,21 @@ def ollama_port() -> int:
     return int(cfg().get("gateway", {}).get("ollama_port", 11434))
 
 
-def lan_addresses():
-    """The IPv4 LAN addresses, without container and VPN interfaces (the same rule as the gateway's)."""
+def _server_names():
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "console"))
-    from outcrop.common.config import lan_addresses as lan
-    return [a for a in lan() if ":" not in a]
+    from outcrop.common.config import server_names
+    return server_names()
+
+
+def lan_addresses():
+    """The IPv4 LAN addresses apps reach this server at: its own (without container and VPN interfaces, the gateway's
+    rule), or on StartOS the ones StartOS published (the container's own are not reachable from the LAN)."""
+    return [a for a in _server_names()[1] if ":" not in a]
+
+
+def local_name() -> str:
+    """This server's .local name (on StartOS, the one StartOS published)."""
+    return _server_names()[0] or socket.gethostname() + ".local"
 
 
 def local_token():
@@ -174,12 +184,21 @@ def cmd_status(_):
     cmd_connect(None, short=True)
 
 
+def https_hint(c) -> str:
+    if os.environ.get("OUTCROP_PLATFORM") == "startos":
+        return (f"{B}HTTPS{X} (for apps that trust StartOS's root CA)\n"
+                "  the address of the interface \"OpenAI and Anthropic API (HTTPS)\" in StartOS, with /v1")
+    return (f"{B}HTTPS{X} (for apps that trust the server's CA: http://{socket.gethostname()}.local/ca)\n"
+            f"  https://{socket.gethostname()}.local:{c.get('gateway', {}).get('https_port', 8443)}/v1   "
+            "(the same API; the token does not cross the LAN in the clear)")
+
+
 def cmd_connect(_, short=False):
     c = cfg()
     s = c.get("server", {})
     pt = public_port()
     op = ollama_port()
-    hosts = lan_addresses() + [socket.gethostname() + ".local"]
+    hosts = lan_addresses() + [local_name()]
     if short:
         print(f"{B}API:{X}      " + "  ".join(f"http://{h}:{pt}/v1" for h in hosts[:2]) + f"  {D}(outcrop connect for details){X}")
         return
@@ -189,13 +208,12 @@ def cmd_connect(_, short=False):
                "the key in " + str(SP.OUTCROP_HOME / "state" / "api_key") if SP.api_key(c) not in ("none", "", None)
                else "any text (no key is checked)")
     print(f"""{B}OpenAI-compatible apps{X} (Open WebUI, LibreChat, Continue, Cline, Aider, Zed, LangChain, the openai SDK, ...)
-  Base URL:  http://{h0}:{pt}/v1        (also http://{socket.gethostname()}.local:{pt}/v1)
+  Base URL:  http://{h0}:{pt}/v1        (also http://{local_name()}:{pt}/v1)
   API key:   {key_txt}
   Model:     {s.get('model_id', 'qwen3.8-flash-next')}   (any name works; GET /v1/models also lists qwen3.8-flash-next:<preset>)
   Endpoints: /v1/chat/completions, /v1/responses, /v1/models
 
-{B}HTTPS{X} (for apps that trust the server's CA: http://{socket.gethostname()}.local/ca)
-  https://{socket.gethostname()}.local:{c.get('gateway', {}).get('https_port', 8443)}/v1   (the same API; the token does not cross the LAN in the clear)
+{https_hint(c)}
 
 {B}Anthropic-compatible apps{X} (Claude Code, the anthropic SDK)
   ANTHROPIC_BASE_URL=http://{h0}:{pt}   ANTHROPIC_AUTH_TOKEN=<token>   endpoint /v1/messages
