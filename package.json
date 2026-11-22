@@ -1,0 +1,12 @@
+{
+  "name": "outcrop-startos",
+  "private": true,
+  "description": "Outcrop's StartOS package (startos/): built with start-cli, see the Makefile",
+  "license": "MIT",
+  "dependencies": {
+    "@start9labs/start-sdk": "4.1.0"
+  },
+  "overrides": {
+    "@start9labs/start-sdk": "$@start9labs/start-sdk"
+  }
+}
