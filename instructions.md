@@ -9,8 +9,9 @@ Outcrop runs Qwen3.8-Flash-Next on your server's NVIDIA card and serves it to yo
 
 ## First steps
 
-1. Run **Set console password** (StartOS asks for it). Keep the password it shows: it is shown only once.
-2. Open the **Web console** and sign in as `admin` with that password. It works while the models download.
+1. Run **Console password** to see the console's password (it was chosen at random when Outcrop was installed). The
+   copy button copies it without showing it. **Configure** changes it.
+2. Open the **Web console** and sign in with that password. It works while the models download.
 3. In the console's **Connect** page, make a token for each app. It shows the exact settings to enter.
 
 ## Connecting apps

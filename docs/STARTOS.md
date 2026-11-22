@@ -19,11 +19,12 @@ engine starts only on hardware a [profile](PROFILES.md) fits; the **Engine** hea
 
 ## Install and first start
 
-1. Install Outcrop. StartOS asks you to run **Set console password**: it makes six random words and shows them once.
+1. Install Outcrop. It chooses a random console password; the **Console password** action shows it (masked, with a
+   copy button), and **Configure** changes it.
 2. Start the service. The first start downloads the model files for your hardware profile, checks them, and prepares
    them: about 110 GB with 32 GB of RAM, from about half an hour to several hours depending on your internet. The
    **Models** health check shows the file it is on. An interrupted download resumes where it stopped.
-3. While it downloads, open the **Web console**, sign in as `admin` with that password, and make a token for each app
+3. While it downloads, open the **Web console**, sign in with that password, and make a token for each app
    on the **Connect** page. When the models are ready the engine starts by itself; the **Engine** health check says
    when it answers.
 
