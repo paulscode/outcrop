@@ -43,6 +43,13 @@ and its network address works too. On each device, first open `http://YOUR-SERVE
 certificate it offers, so your browser trusts the console. Then sign in with your user name on the server and the
 password you chose during setup.
 
+### On StartOS
+
+Outcrop is also a [StartOS](https://start9.com) 0.4 service: install it from the paulscode registry in the StartOS
+marketplace, or sideload its `.s9pk` from the [releases](https://github.com/paulscode/outcrop/releases). It needs the
+same hardware, plus [startos-nvidia-legacy](https://github.com/paulscode/startos-nvidia-legacy) for the driver.
+[docs/STARTOS.md](docs/STARTOS.md) has the details and what differs from an Ubuntu install.
+
 ## Using it
 
 **The console** at `https://YOUR-SERVER.local` shows each request as it is read, thought about and answered. It has
