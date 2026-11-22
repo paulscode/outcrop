@@ -37,7 +37,7 @@ export const KINDS: Array<{ value: Kind; label: string; what: string; speed: boo
   },
 ]
 
-/** Other processes on the GPU, from the live sample (an RDP session cost 7 to 15 % of decode speed). */
+/** Other processes on the GPU, from the live sample (sharing it with a remote desktop cost 7 to 15 % of decode speed). */
 export function useGpuOthers() {
   return useStore(
     metricsStore,
@@ -154,7 +154,7 @@ export function RunPanel({
             {others.length ? (
               <span className="text-warn">
                 Also on the GPU: {others.map((p) => `${p.name} (${mib(p.mem)})`).join(', ')}. The run will be marked, and its
-                speeds may be low (an RDP session cost 7 to 15%).
+                speeds may be low (a remote desktop on the GPU cost 7 to 15%).
               </span>
             ) : (
               <span className="text-muted">Strata has the GPU to itself.</span>

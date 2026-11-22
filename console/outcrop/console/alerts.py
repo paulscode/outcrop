@@ -298,8 +298,8 @@ class Alerts:
             self.contention_since = self.contention_since or now
             if now - self.contention_since >= 30:
                 names = ", ".join(sorted({p["name"] for p in others}))
-                self.open("gpu_contention", "gpu_contention", f"another process is using the GPU ({names}); an RDP "
-                          f"session cost 7 to 15% of decode speed", {"procs": others})
+                self.open("gpu_contention", "gpu_contention", f"another process is using the GPU ({names}); sharing "
+                          f"it with a remote desktop cost 7 to 15% of decode speed", {"procs": others})
         else:
             if self.is_open("gpu_contention"):
                 self.close("gpu_contention", "the GPU is Strata's alone again")

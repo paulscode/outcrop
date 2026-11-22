@@ -109,7 +109,7 @@ function Watch() {
           )}
           {others.length ? (
             <p className="mt-2 rounded-md border border-warn/30 bg-warn-bg px-2.5 py-2 text-xs">
-              {others.map((p) => p.name).join(', ')} {others.length > 1 ? 'share' : 'shares'} the GPU. An RDP session cost 7 to 15% of decode speed here; benchmarks taken now are marked.
+              {others.map((p) => p.name).join(', ')} {others.length > 1 ? 'share' : 'shares'} the GPU. Sharing it with a remote desktop cost 7 to 15% of decode speed; benchmarks taken now are marked.
             </p>
           ) : procs.length ? (
             <p className="mt-2 text-xs text-ok">The GPU is Strata’s alone.</p>

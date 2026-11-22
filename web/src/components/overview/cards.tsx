@@ -74,7 +74,7 @@ export function GpuCard() {
           </GpuNote>
           {others.length ? (
             <GpuNote show={note === 'others'} tone="warn">
-              {`${others.map((p) => p.name).join(', ')} also ${others.length > 1 ? 'use' : 'uses'} the GPU: an RDP session cost 7–15% of decode speed.`}
+              {`${others.map((p) => p.name).join(', ')} also ${others.length > 1 ? 'use' : 'uses'} the GPU, which slows answers (sharing it with a remote desktop cost 7–15% of decode speed).`}
             </GpuNote>
           ) : null}
         </div>

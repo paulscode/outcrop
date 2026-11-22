@@ -224,6 +224,13 @@ class Live:
             for pr in _try(lambda fn=fn: getattr(N, fn)(h)) or []:
                 procs.append({"pid": pr.pid, "mem": (pr.usedGpuMemory or 0) // (1 << 20), "name": _proc_name(pr.pid),
                               "kind": "compute" if "Compute" in fn else "graphics"})
+        hidden = tuple(sorted(p["pid"] for p in procs if p["name"] is None))
+        if hidden:
+            # NVML's pids are the host's: in a container (StartOS) ours are not in our /proc.  Which of our own
+            # processes hold the GPU is looked up again only when that set of pids changes.
+            if getattr(self, "_hidden_key", None) != hidden:
+                self._hidden_key, self._ours_on_gpu = hidden, _gpu_holders()
+            _name_hidden(procs, self._ours_on_gpu)
         g["procs"] = procs
         if g.get("power") is not None:
             last = getattr(self, "_last_power_t", None)
@@ -424,11 +431,34 @@ def _throttle_names(N, reasons: int) -> list[str]:
     return names
 
 
-def _proc_name(pid: int) -> str:
+def _proc_name(pid: int) -> str | None:
     try:
         return Path(f"/proc/{pid}/comm").read_text().strip()
     except OSError:
-        return str(pid)
+        return None
+
+
+def _gpu_holders(proc: Path = Path("/proc")) -> list[str]:
+    """The names of our engines (strata-*) that have the GPU open (/dev/nvidia-uvm).  Only the engines put work on the
+    GPU: the console and Strata's server open the device too, to read NVML, but never show up in NVML's process list."""
+    out = []
+    for d in proc.glob("[0-9]*"):
+        try:
+            name = (d / "comm").read_text().strip()
+            if "strata" in name and any(os.readlink(f) == "/dev/nvidia-uvm" for f in (d / "fd").iterdir()):
+                out.append(name)
+        except OSError:
+            continue
+    return sorted(out)
+
+
+def _name_hidden(procs: list[dict], ours: list[str]) -> None:
+    """GPU processes not in our /proc get our engines' names, the largest first (an engine is the big one); any left
+    over really are outside (another service on the GPU), and are named by their host pid."""
+    hidden = sorted((p for p in procs if p["name"] is None), key=lambda p: -(p.get("mem") or 0))
+    left = list(ours)
+    for p in hidden:
+        p["name"] = left.pop(0) if left else f"pid {p['pid']}"
 
 
 def _meminfo() -> dict:
