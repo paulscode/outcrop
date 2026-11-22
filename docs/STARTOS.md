@@ -6,23 +6,29 @@ what is different from an install on Ubuntu with `./setup.sh`.
 
 ## What you need
 
-| | |
-| --- | --- |
-| GPU | Quadro M6000 24 GB, or Tesla M40 24 GB (the same chip, not tested yet) |
-| Driver | [startos-nvidia-legacy](https://github.com/paulscode/startos-nvidia-legacy): StartOS's own NVIDIA edition supports only newer cards |
-| CPU | x86-64 with AVX2 (Intel Haswell, AMD Zen and newer) |
-| RAM | 32 GB or more (see "Memory" below) |
-| Disk | about 120 GB (32 GB of RAM) to 180 GB (64 GB and more) free for the service |
+Either of two kinds of machine:
 
-StartOS offers Outcrop only to servers with such a GPU, CPU and RAM. A sideloaded package installs anywhere, but its
-engine starts only on hardware a [profile](PROFILES.md) fits; the **Engine** health check says why when it does not.
+| | Quadro M6000 or Tesla M40 (x86-64) | NVIDIA GB10 (arm64) |
+| --- | --- | --- |
+| Examples | a workstation or server with the card | DGX Spark, ASUS Ascent GX10 |
+| GPU | Quadro M6000 24 GB, or Tesla M40 24 GB (the same chip, not tested yet) | GB10 with 128 GB of unified memory |
+| Driver | [startos-nvidia-legacy](https://github.com/paulscode/startos-nvidia-legacy): StartOS's own NVIDIA edition supports only newer cards | comes with StartOS |
+| CPU | x86-64 with AVX2 (Intel Haswell, AMD Zen and newer) | the GB10's own |
+| RAM | 32 GB or more (see "Memory" below) | the 128 GB it has |
+| Disk | about 120 GB (32 GB of RAM) to 180 GB (64 GB and more) free for the service | about 100 GB free |
+| Presets | speed, balanced and quality, by RAM | quality (IQ3_S) only, with a 262K context |
+
+StartOS offers Outcrop only to servers with such a GPU, CPU and RAM, and each architecture gets its own package. A
+sideloaded package installs anywhere, but its engine starts only on hardware a [profile](PROFILES.md) fits; the
+**Engine** health check says why when it does not.
 
 ## Install and first start
 
 1. Install Outcrop. It chooses a random console password; the **Console password** action shows it (masked, with a
    copy button), and **Configure** changes it.
 2. Start the service. The first start downloads the model files for your hardware profile, checks them, and prepares
-   them: about 110 GB with 32 GB of RAM, from about half an hour to several hours depending on your internet. The
+   them: about 110 GB with 32 GB of RAM or 85 GB on a GB10, from about 20 minutes to several hours depending on your
+   internet. The
    **Models** health check shows the file it is on. An interrupted download resumes where it stopped.
 3. While it downloads, open the **Web console**, sign in with that password, and make a token for each app
    on the **Connect** page. When the models are ready the engine starts by itself; the **Engine** health check says
@@ -50,13 +56,15 @@ sees each app's own address, so a token can be limited to the address of the dev
 - **Memory.** StartOS keeps a share of the RAM for itself and starts reclaiming its services' memory at about 90% of
   the rest. Outcrop stays below that line, so it has a few GiB less than on Ubuntu: about 25 GiB of 32 GB, and about
   52 GiB of 64 GB. With 64 GB, the `quality` preset therefore runs in low-RAM mode, reading some of its model from
-  disk, where on Ubuntu it would hold it all in RAM; a fast SSD matters more.
+  disk, where on Ubuntu it would hold it all in RAM; a fast SSD matters more. On a GB10 the line is at about 108 GiB
+  and Outcrop uses about 64, the whole 262K context included.
 - **Other services share that line.** StartOS draws one memory line for all of its services together. Outcrop sizes
   itself from what is free when a preset starts; a service that grows afterwards can push everything past the line,
   and then every service slows to a crawl. With 32 GB, give Outcrop the server to itself, or keep the other services
   small.
 - **Locked memory.** StartOS does not let a service lock more than 8 MiB of RAM. Outcrop works without it, and the
-  engine's GPU transfers are not affected; a few percent of speed may be lost.
+  engine's GPU transfers are not affected; a few percent of speed may be lost. On a GB10 this keeps the n-gram table on
+  the SSD, which measured no slower there: the page cache holds it.
 - **Backups** keep your settings, tokens, chats and logs, not the models (hundreds of GB). After a restore they are
   downloaded again on the next start.
 - **The command line**: `outcrop` works inside the service, for example from the server over SSH:

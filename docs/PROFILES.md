@@ -23,10 +23,15 @@ outcrop profile apply m6000-64g # do it (the old presets.json is kept as a .bak 
 | `m6000-64g` | 48 to 95 GB | Q2_0, IQ3_XXS, IQ3_S | `balanced` | yes, with RAM held to 64 GB (2026-11-18) |
 | `m6000-128g` | 96 to 191 GB | Q2_0, IQ3_XXS, IQ3_S, and the 1M-token presets | `quality` | not yet |
 | `m6000-256g` | 192 GB and more | as 128g, with a bigger conversation cache | `quality` | the reference system ([FINDINGS.md](FINDINGS.md)) |
+| `gb10-128g` | 110 to 139 GB, unified | IQ3_S | `quality` (262K context) | yes, on an ASUS Ascent GX10 under StartOS (2026-11-22) |
 
 Each profile's `"tested"` field says on what machine and when it was checked; `null` means not yet. The Tesla M40 24 GB
 is the same chip as the M6000 and is listed as similar: setup suggests the matching profile with a note that it has not
 been tested on that card.
+
+The GB10 (DGX Spark, ASUS Ascent GX10) is a different kind of machine: an Arm CPU and the GPU share one 128 GB memory.
+Its profile runs Strata's own Spark settings, with the experts read in place from the model file (`ram_mode: mmap`) and
+no second copy for the CPU. Only IQ3_S is offered, because the other packs' CPU kernels are x86-only.
 
 What changes with RAM, and why:
 
@@ -76,6 +81,8 @@ profile itself.
 | `match.similar_gpus` | GPUs of the same family: suggested with a "not tested on this card" note |
 | `match.vram_mib_min` | Less VRAM than this and the profile does not fit |
 | `match.ram_gib` | `[low, high)`: the RAM sizes the profile is for, in GiB as the system reports it |
+| `match.arch` | CPU architectures, as `uname -m` prints them (`aarch64`); any when absent |
+| `match.memory` | `discrete` (the default: the GPU has its own VRAM) or `unified` (one memory for both, as on a GB10) |
 | `packs` | The model packs setup downloads and prepares: `q2_0`, `iq3_xxs`, `iq3_s`, `iq2_xs` |
 | `default_preset` | The preset started at boot |
 | `tested` | When and on what machine it was checked, or `null` |
@@ -88,8 +95,8 @@ profile itself.
 | `gateway` | The API gateway's ports and limits |
 | `console` | The console's ports |
 | `engine` | The engine binary in `~/.outcrop/bin` |
-| `common` | `env` (engine switches, `STRATA_*` and a few thread settings only) and `args` (engine flags) for every preset; `vision` (`cpu` or `off`) and `vision_cfg` |
-| `presets` | One entry per preset: `description`, `pack`, `context`, and optionally `rope` (`{"scaling": "yarn", "scale": 4}`), `kv`, `kv_resident`, `ram_mode` (`auto`, `full`, `resident`), `expert_cache`, `prefill`, `mtp`, `spec`, `env`, `args`, `drop_env`, `engine`, `vision`, and the server options `parallel`, `sampling`, `reasoning_effort`, `max_tokens`, `idle_unload_s` |
+| `common` | `q8_dense` (`false` skips the CPU's Q8 copy of the dense weights, which a unified-memory machine does not use), `ram_mode`, `env` (engine switches, `STRATA_*` and a few thread settings only) and `args` (engine flags) for every preset; `vision` (`cpu` or `off`) and `vision_cfg` |
+| `presets` | One entry per preset: `description`, `pack`, `context`, and optionally `rope` (`{"scaling": "yarn", "scale": 4}`), `kv`, `kv_resident`, `ram_mode` (`auto`, `full`, `resident`, `mmap`), `expert_cache`, `prefill`, `mtp`, `spec`, `env`, `args`, `drop_env`, `engine`, `vision`, and the server options `parallel`, `sampling`, `reasoning_effort`, `max_tokens`, `idle_unload_s` |
 
 When a profile is applied, the `server`, `gateway` and `console` sections of an existing presets.json are kept: those are
 this machine's network choices, not the profile's.
