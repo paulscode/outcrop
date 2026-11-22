@@ -20,11 +20,11 @@
       "iq3_s"
     ],
     "default_preset": "quality",
-    "tested": null,
+    "tested": "2026-11-22 on an ASUS Ascent GX10 under StartOS 0.4.2.1: quality 61.2 / 66.2 / 46.7 / 59.8 tok/s (chat / code / story / 4K doc), 4K prompt 1,497 tok/s; at 262K context the same, a 92K-token prompt at 2,040 tok/s and a 237K-token one at 1,888 (decode 48 and 55 tok/s after them); the service peaked at 64 GiB of StartOS's 108.6 GiB line, with no throttling; switches about 70 s",
     "notes": [
       "IQ3_S only: Q2_0 and IQ3_XXS's CPU kernels are x86-only, so there is no speed or balanced preset on ARM.",
-      "The 28.8 GB n-gram table is read from the SSD: kept in RAM as on a bare DGX Spark, it would take Outcrop past StartOS's memory line. Strata measured prompts about 1.2x slower that way and decode unchanged.",
-      "Not measured on StartOS yet."
+      "The 28.8 GB n-gram table is read from the SSD. With this much memory the page cache keeps it anyway: measured the same as --ple-io ram, which StartOS cannot lock in RAM (the container's 8 MiB RLIMIT_MEMLOCK).",
+      "The whole 262K context costs nothing measurable: the KV cache is sized at start (61 GiB at 128K, 63 at 262K) and prompts stay as fast."
     ]
   },
   "server": {
@@ -65,7 +65,7 @@
     "quality": {
       "description": "IQ3_S pack, 3.5 bits/weight: task average 93.3, level with the original model",
       "pack": "iq3_s",
-      "context": 65536,
+      "context": 262144,
       "prefill": "auto:32768",
       "args": [
         "--mtp-q4 all",

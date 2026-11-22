@@ -10,7 +10,9 @@
 #      services, memory and IO pressure, and the bytes read from the disk holding the models
 #
 # Needs: ssh to the server as start9 with sudo (HOST, default YOUR-SERVER.local), a token in $OUTCROP_TOKEN_FILE (default
-# ~/.config/outcrop-test/token).  Writes bench/results/startos-<host>-<NAME>-<date>.json.
+# ~/.config/outcrop-test/token).  BASE=PRESET starts from that preset's settings (the GB10's prefill and draft
+# options) instead of a bare one, CONTEXT sets the context (default 262144), and ARGS
+# adds engine options ("--ple-io ram").  Writes bench/results/startos-<host>-<NAME>-<date>.json.
 set -euo pipefail
 NAME=${1:?usage: startos-variant.sh NAME PACK [BUDGET_GIB|auto] [CONV_CACHE_MIB|default]}
 PACK=${2:?pack: q2_0, iq3_xxs or iq3_s}
@@ -48,16 +50,21 @@ PY'
 }
 
 echo "== $NAME: $PACK, budget $BUDGET, conversation cache $CONV, on $HOST"
-ssh -o BatchMode=yes "start9@$HOST" "$ATTACH python3 - '$NAME' '$PACK' '$BUDGET' '$CONV'" <<'PY'
+ssh -o BatchMode=yes "start9@$HOST" "$ATTACH python3 - '$NAME' '$PACK' '$BUDGET' '$CONV' '${BASE:-}' '${CONTEXT:-262144}' '${ARGS:-}'" <<'PY'
 import json, os, sys
-name, pack, budget, conv = sys.argv[1:5]
+name, pack, budget, conv, base, context, extra = sys.argv[1:8]
 path = os.environ.get("OUTCROP_HOME", "/data") + "/presets.json"
 c = json.load(open(path))
-p = {"description": f"measurement: {pack}, budget {budget}, conversation cache {conv}", "pack": pack, "context": 262144}
+p = dict(c["presets"][base]) if base else {}
+p.update({"description": f"measurement: {pack}, context {context}, budget {budget}, conversation cache {conv}"
+                         + (f", from {base}" if base else ""), "pack": pack, "context": int(context)})
+p.pop("tested", None)
+if extra:
+    p["args"] = p.get("args", []) + [extra]
 if budget != "auto":
     p["resident_budget_gib"] = int(budget)
 if conv != "default":
-    p["args"] = [f"--conversation-cache-mib {int(conv)}"]
+    p["args"] = p.get("args", []) + [f"--conversation-cache-mib {int(conv)}"]
 c["presets"][name] = p
 tmp = path + ".tmp"
 json.dump(c, open(tmp, "w"), indent=2)
