@@ -76,6 +76,7 @@ COPY bin/ /opt/outcrop/bin/
 COPY lib/ /opt/outcrop/lib/
 COPY profiles/ /opt/outcrop/profiles/
 COPY setup/ /opt/outcrop/setup/
+COPY docker/ /opt/outcrop/docker/
 COPY console/outcrop/ /opt/outcrop/console/outcrop/
 COPY console/pyproject.toml console/uv.lock /opt/outcrop/console/
 COPY LICENSE README.md /opt/outcrop/

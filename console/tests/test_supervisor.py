@@ -193,3 +193,26 @@ def test_follow_and_journal_commands(startos):
     finally:
         p.terminate()
         p.wait(5)
+
+
+def test_boot_skips_a_unit_whose_requirement_failed(tmp_path):
+    sp = specs(tmp_path)
+    sp = {"models.service": S.Spec([PY, "-c", "import sys; sys.exit(1)"], type="oneshot", remain_after_exit=True, enabled=True),
+          "engine.service": S.Spec([PY, "-c", "import time; time.sleep(60)"], enabled=True, after=["models.service"],
+                                   requires=["models.service"])}
+    s = S.Supervisor(sp, tmp_path / "j")
+    try:
+        s.boot()
+        assert s.show(["models.service"])["models.service"]["ActiveState"] == "failed"
+        assert s.show(["engine.service"])["engine.service"]["ActiveState"] == "inactive"
+        assert "Dependency failed for engine.service: models.service." in messages(s, "engine.service")
+    finally:
+        s.shutdown()
+
+
+def test_outcrop_units_order(tmp_path):
+    """The console is up before the models' long first download; the boot default waits for them."""
+    u = S.outcrop_units(Path("/opt/outcrop"), tmp_path)
+    assert "outcrop-console.service" in u["outcrop-models.service"].after
+    assert u["outcrop-boot.service"].requires == ["outcrop-models.service"]
+    assert u["outcrop-engine@.service"].start_limit_burst == 5 and u["outcrop-engine@.service"].restart_sec == 20

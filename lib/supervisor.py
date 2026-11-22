@@ -57,6 +57,7 @@ class Spec:
     condition_not_exists: str | None = None
     enabled: bool = False                     # started when the supervisor starts
     after: list[str] = field(default_factory=list)
+    requires: list[str] = field(default_factory=list)  # Requires=: not started at boot when one of these failed
 
 
 def fmt_time(t: float) -> str:
@@ -377,6 +378,12 @@ class Supervisor:
         while todo:
             ready = [n for n in todo if all(a in started or a not in todo for a in self.specs[n].after)] or todo[:1]
             for n in ready:
+                failed = [r for r in self.specs[n].requires if r in self.units and self.units[r].active == "failed"]
+                if failed:
+                    self.journal.write(n, 0, f"Dependency failed for {n}: {', '.join(failed)}.")
+                    started.add(n)
+                    todo.remove(n)
+                    continue
                 e = self.start(n, block=self.specs[n].type == "oneshot")
                 if e:
                     self.journal.write(n, 0, e)
@@ -474,9 +481,16 @@ def outcrop_units(project: Path, home: Path, user: str = "outcrop") -> dict[str,
                                         stop_timeout=20, enabled=True, after=["outcrop-gateway.service"]),
         "outcrop-ollama-bridge.service": Spec([str(b / "outcrop-ollama-bridge"), "--auto"], user=user, env=env,
                                               restart="always", restart_sec=5, enabled=True),
+        # StartOS only: the models, downloaded and prepared on the service's first start (setup/install.sh's steps 6 and 7
+        # on Ubuntu); hours the first time, seconds after (every finished file is skipped)
+        "outcrop-models.service": Spec([str(project / "docker" / "models.sh")], type="oneshot", user=user, env=env,
+                                       remain_after_exit=True, enabled=True,
+                                       after=["outcrop-gateway.service", "outcrop-console.service",
+                                              "outcrop-ollama-bridge.service"]),
         "outcrop-boot.service": Spec([sys.executable, str(b / "outcrop"), "boot-start"], type="oneshot", user=user, env=env,
                                      remain_after_exit=True, enabled=True,
-                                     after=["outcrop-gateway.service", "outcrop-ollama-bridge.service"]),
+                                     after=["outcrop-gateway.service", "outcrop-ollama-bridge.service",
+                                            "outcrop-models.service"], requires=["outcrop-models.service"]),
     }
 
 
@@ -497,7 +511,8 @@ def main(argv: list[str] | None = None) -> int:
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: stop.set())
     print(f"outcrop-supervisor: listening on {run / 'supervisor.sock'}", flush=True)
-    sup.boot()
+    # in its own thread: the models' first download takes hours, and a stop must not wait for it
+    threading.Thread(target=sup.boot, daemon=True, name="boot").start()
     stop.wait()
     print("outcrop-supervisor: stopping every unit", flush=True)
     sup.shutdown()
