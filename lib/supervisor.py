@@ -177,7 +177,9 @@ class Supervisor:
         pw = pwd.getpwnam(user)
 
         def drop():
-            os.setgroups([])
+            # the user's groups, as systemd gives a service (the gateway and the console reach the page fetcher's socket
+            # through the outcrop-fetch group)
+            os.initgroups(user, pw.pw_gid)
             os.setgid(pw.pw_gid)
             os.setuid(pw.pw_uid)
         return drop

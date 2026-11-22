@@ -216,3 +216,19 @@ def test_outcrop_units_order(tmp_path):
     assert "outcrop-console.service" in u["outcrop-models.service"].after
     assert u["outcrop-boot.service"].requires == ["outcrop-models.service"]
     assert u["outcrop-engine@.service"].start_limit_burst == 5 and u["outcrop-engine@.service"].restart_sec == 20
+
+
+@pytest.mark.skipif(os.geteuid() != 0, reason="starting a unit as another user needs root (the image's test stage runs as root)")
+def test_a_unit_gets_its_users_groups(tmp_path):
+    """As systemd does: the gateway and the console reach the page fetcher's socket through the outcrop-fetch group."""
+    import grp
+    import pwd
+    user = next((p.pw_name for p in pwd.getpwall() if p.pw_uid >= 1000 and len(grp.getgrall()) and
+                 [g for g in grp.getgrall() if p.pw_name in g.gr_mem]), None)
+    if user is None:
+        pytest.skip("no user with a supplementary group here")
+    want = sorted(g.gr_name for g in grp.getgrall() if user in g.gr_mem)
+    s = S.Supervisor({"g.service": S.Spec(["id", "-Gn"], type="oneshot", user=user)}, tmp_path / "j")
+    s.start("g.service")
+    got = next(m for m in messages(s, "g.service") if m and not m.startswith(("Started", "Main process", "Finished")))
+    assert set(want) <= set(got.split())
