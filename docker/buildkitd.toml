@@ -1,0 +1,9 @@
+# Outcrop's buildx builder: keep the CUDA engine layers (amd64 + arm64, ~25 GB) between builds.
+# The default policy evicts to ~9 GiB whenever the disk has under ~530 GiB free.
+[worker.oci]
+  gc = true
+  [[worker.oci.gcpolicy]]
+    all = true
+    reservedSpace = "50GB"
+    maxUsedSpace = "70GB"
+    minFreeSpace = "15GB"

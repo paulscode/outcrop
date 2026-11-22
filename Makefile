@@ -16,6 +16,9 @@
 START_CLI ?= start-cli-2.8.0
 HOST ?= YOUR-SERVER.local
 TEST_ARCH ?= x86_64
+# the buildx builder start-cli builds with: Outcrop's own, whose cache budget (docker/buildkitd.toml) keeps the CUDA
+# engines between builds (each takes 20 min on amd64, over 2 h under qemu on arm64)
+BUILDER ?= outcrop
 # the architectures a release carries: aarch64 (the GB10) joins once its image and profile are done
 RELEASE_ARCHES ?= x86_64
 # the public key every paulscode package is signed with (what users add to StartOS's trusted keys)
@@ -40,7 +43,7 @@ NODE := $(shell command -v node)
 PRETTIER_CONFIG := $(SDK_DIR)/prettier.config.json
 
 .DELETE_ON_ERROR:
-.PHONY: check format test-builds release-builds verify-040 install-test release-publish clean-builds icons
+.PHONY: builder check format test-builds release-builds verify-040 install-test release-publish clean-builds icons
 
 node_modules: package-lock.json
 	npm ci
@@ -63,18 +66,18 @@ format: | node_modules
 
 # pack ARCH: one architecture's s9pk into $(BUILD_DIR) (start-cli builds the image from the Dockerfile itself)
 define pack
-	ARCH=$(1) $(START_CLI) s9pk pack --arch=$(1) --icon icon.png -o $(BUILD_DIR)/$(PKG_ID)_$(1)-040.s9pk
+	ARCH=$(1) BUILDX_BUILDER=$(BUILDER) $(START_CLI) s9pk pack --arch=$(1) --icon icon.png -o $(BUILD_DIR)/$(PKG_ID)_$(1)-040.s9pk
 
 endef
 
-test-builds: javascript/index.js
+test-builds: javascript/index.js builder
 	mkdir -p $(BUILD_DIR)
 	rm -f $(BUILD_DIR)/$(PKG_ID)_$(TEST_ARCH)-040.s9pk $(BUILD_DIR)/SHA256SUMS*
 	$(call pack,$(TEST_ARCH))
 	cd $(BUILD_DIR) && sha256sum *.s9pk > SHA256SUMS
 	@echo; echo "Test build ($(TEST_ARCH)) in $(BUILD_DIR):"; ls -lh $(BUILD_DIR); cat $(BUILD_DIR)/SHA256SUMS
 
-release-builds: javascript/index.js
+release-builds: javascript/index.js builder
 	@git diff --quiet && git diff --cached --quiet || { echo "the tree has uncommitted changes: commit them first (the s9pk records the commit)"; exit 1; }
 	rm -rf $(BUILD_DIR)
 	mkdir -p $(BUILD_DIR)
@@ -96,6 +99,11 @@ verify-040:
 	    $$f "$(TRUSTED_KEY)" || { echo "$$f: not signed with the trusted key"; exit 1; }; \
 	  echo "$$f: $$(echo "$$m" | jq -r '"\(.version), \(.images.main.arch | join(",")), osVersion \(.osVersion)"'), signed with the trusted key"; \
 	done
+
+# Outcrop's builder, made once (qemu's binfmt handlers must be registered for arm64)
+builder:
+	@docker buildx inspect $(BUILDER) >/dev/null 2>&1 || \
+	  docker buildx create --name $(BUILDER) --driver docker-container --buildkitd-config docker/buildkitd.toml --bootstrap
 
 install-test:
 	scp -q $(BUILD_DIR)/$(PKG_ID)_$(TEST_ARCH)-040.s9pk start9@$(HOST):/tmp/$(PKG_ID).s9pk
