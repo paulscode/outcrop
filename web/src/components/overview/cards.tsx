@@ -142,7 +142,7 @@ export function GpuCard() {
                   <span>clocks not reported</span>
                 </Tip>
               )}
-              {isNum(g?.pcie_gen)
+              {isNum(g?.pcie_gen) && !unified
                 ? ` · PCIe ${g.pcie_gen} x${g.pcie_width}`
                 : ''}
             </div>

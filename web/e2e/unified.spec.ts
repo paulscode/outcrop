@@ -86,6 +86,7 @@ test('a GB10: one memory pool on the overview, and no VRAM meter', async ({
   ).toBeVisible()
   await expect(page.getByText('what fills the memory')).toBeVisible()
   await expect(page.getByText('VRAM', { exact: true })).toHaveCount(0)
+  await expect(page.getByText(/PCIe/)).toHaveCount(0)
 })
 
 test('a GB10 on the System page: one pool, its name, unified memory and no PCIe', async ({
