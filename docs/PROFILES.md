@@ -42,8 +42,8 @@ What changes with RAM, and why:
 - **Reading the rest.** In the low-RAM mode the 32 GB profile asks for a missed expert's slices together
   (`STRATA_FETCH_WILLNEED`, engine patch 0008) and sends the look-ahead's read hints for the top three ranks only
   (`STRATA_LOOKAHEAD_K=3`), and its `balanced` preset keeps a 131,072-token context, whose smaller attention cache
-  leaves 1.7 GiB more for experts. Measured: 59% and 77% less read from the disk, 2% and 8% faster
-  ([FINDINGS.md](FINDINGS.md), the last section).
+  leaves 1.7 GiB more for experts. Measured: about 60% and 77% less read from the disk; `balanced` 7-8% faster
+  (11% on a disk capped at 0.5 GB/s), `speed` as fast as before ([FINDINGS.md](FINDINGS.md), the last section).
 - **The conversation cache.** Strata parks recent conversations in RAM, so returning to a long one (or an agent
   switching between its helpers) does not read the whole prompt again. 2 parked conversations in 4 GiB at 32 and 64 GB,
   up to 16 in 48 GiB on the reference system.

@@ -296,8 +296,8 @@ look-ahead's own read hints to the top three ranks (past them, they only add rea
 
 | | `speed` (Q2_0) | `balanced` (IQ3_XXS) |
 |---|---|---|
-| the read hints and K=3: GSM8K answers, paired | 1.021 | 1.038 |
-| a 131,072-token context as well | not taken (0.98 on top of them) | 1.034 more, so 1.082 in all |
+| the read hints and K=3: GSM8K answers, paired | 1.021, and 1.004 in a second run (the shipped install): as fast | 1.038 |
+| a 131,072-token context as well | not taken (0.98 on top of them) | 1.034 more, so 1.082 in all; 1.071 in a second run (the shipped install) |
 | read from the disk during the 40 answers | 2.3 GB, now 0.9 GB | 137.7 GB, now 32.4 GB |
 | the prompts' median time | 1.84 s, now 1.74 s | 3.35 s, now 2.43 s |
 | on a disk capped at 0.5 GB/s, paired | (it barely reads) | 1.110: the new settings lose nothing there (1.009 against the uncapped disk), the old ones 3% |
