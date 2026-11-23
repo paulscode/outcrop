@@ -1,0 +1,237 @@
+From aa5c08cd3bbb1be6ecd19bf10e3ceb20b8c38db5 Mon Sep 17 00:00:00 2001
+From: Outcrop <outcrop@localhost>
+Date: Mon, 23 Nov 2026 02:06:45 -0600
+Subject: [PATCH 7/9] RAM tier: page-locked in segments of about 1 GiB, each
+ before it is written (STRATA_PIN_SEGMENTS)
+
+The paced path (#1250) took the arena's pages in 1 GiB steps and then page-locked them all in ONE registration. On
+kernels that type pageblocks as CMA without a CMA area (Ubuntu's 7.0.0-42 and 7.0.0-43: CmaTotal 0, yet 2.8 GiB of
+CMA-typed pageblocks on a 31 GiB machine), that registration can loop for many minutes: a long-term pin migrates the
+pages it finds in those blocks and pins the whole range again, while compaction moves other pages into them. On a
+Quadro M6000 machine with 31 GiB of RAM the 19.3 GiB tier took anywhere from 44 s to over 30 minutes to page-lock,
+and during one evening's update check it stood at the page-lock for 131 s and 314 s.
+
+Each step is now its own registration, made before anything is written into it. The pages a pin faults in itself are
+allocated outside those blocks, so there is nothing to migrate, and a retry would redo one segment, not the arena.
+Every cut is a page-aligned blob start: no page is registered twice and no blob spans two registrations. The
+registered part is still a prefix, so pinned() and the copy sites are unchanged. When the segments' device aliases are
+not one run (they were not, on that machine), device_alias() looks up the blob's own segment, and the opt-in exchange
+rotation, which needs one run, stays off.
+
+Measured there with the paced path forced (STRATA_PIN_GUARD=2) and compaction forced throughout the start
+(/proc/sys/vm/compact_memory written in a loop): the single registration had not finished after 300 s, while the
+segments locked 19.27 GiB in 20 segments in 22.1 s (the slowest 2.2 s). Decode speed and the answers are unchanged:
+all 40 GSM8K answers came out the same, with the PCIe share reading RAM-tier experts through the segments' aliases.
+
+STRATA_PIN_SEGMENTS=0 restores the single registration.
+---
+ include/strata/core/expert_source.hpp |   5 ++
+ src/core/expert_source.cpp            | 111 +++++++++++++++++++++++---
+ 2 files changed, 106 insertions(+), 10 deletions(-)
+
+diff --git a/include/strata/core/expert_source.hpp b/include/strata/core/expert_source.hpp
+index ca325ae..35fd730 100644
+--- a/include/strata/core/expert_source.hpp
++++ b/include/strata/core/expert_source.hpp
+@@ -1213,6 +1213,11 @@ private:
+     bool complement_registered_ = false;      ///< the arena is ordinary memory registered with cudaHostRegister (not cudaHostAlloc)
+     uint64_t complement_pin_limit_ = 0;
+     uint64_t complement_lock_off_ = 0;        ///< the working-set lock covers [lock_off, lock_off + locked)
++    /// STRATA_PIN_SEGMENTS: the paced path's registrations of the arena, [lo, hi) each with the device alias of lo, in
++    /// order and back to back from 0 (so the registered part is still a prefix).  Empty: one registration, or none.
++    struct PinSegment { uint64_t lo = 0, hi = 0; const uint8_t* dev = nullptr; };
++    std::vector<PinSegment> complement_segments_;
++    bool complement_segments_contiguous_ = true;   ///< the aliases are one run: complement_device_ + offset holds
+     bool complement_ready_ = false;
+     uint64_t complement_locked_ = 0;          ///< bytes held in the working set (pin refused)
+     int64_t complement_lent_slots_ = 0;
+diff --git a/src/core/expert_source.cpp b/src/core/expert_source.cpp
+index 4a872e8..3d0d080 100644
+--- a/src/core/expert_source.cpp
++++ b/src/core/expert_source.cpp
+@@ -1574,7 +1574,12 @@ void FileExpertSource::close() {
+     if (complement_arena_ != nullptr) {
+         if (complement_pinned_ && !complement_registered_) (void) cudaFreeHost(complement_arena_);
+         else {
+-            if (complement_registered_) (void) cudaHostUnregister(complement_arena_);
++            if (complement_registered_ && !complement_segments_.empty()) {
++                for (const PinSegment& s : complement_segments_)
++                    (void) cudaHostUnregister((uint8_t*) complement_arena_ + s.lo);
++            } else if (complement_registered_) {
++                (void) cudaHostUnregister(complement_arena_);
++            }
+             if (complement_locked_ > 0)
+                 strata::platform::unlock_resident((uint8_t*) complement_arena_ + complement_lock_off_, complement_locked_);
+             std::free(complement_arena_);
+@@ -1603,6 +1608,8 @@ void FileExpertSource::close() {
+     complement_registered_ = false;
+     complement_pin_limit_ = 0;
+     complement_lock_off_ = 0;
++    complement_segments_.clear();
++    complement_segments_contiguous_ = true;
+     complement_ready_ = false;
+     complement_locked_ = 0;
+     complement_lent_slots_ = 0;
+@@ -3734,6 +3741,8 @@ bool FileExpertSource::pin_cache_complement(
+     uint64_t locked = 0;
+     uint64_t partial_pin = 0;   ///< CS-T: a registered prefix of a locked arena
+     uint64_t lock_off = 0;      ///< where the working-set lock starts (after the registered prefix)
++    std::vector<PinSegment> segments;   ///< STRATA_PIN_SEGMENTS: the paced path's registrations
++    bool segments_contiguous = true;
+     std::string note;
+ #if defined(__linux__)
+     NumaComplementPlacement numa;   ///< STRATA_NUMA_SPLIT step B; inert unless the live pool split on real nodes
+@@ -3742,7 +3751,11 @@ bool FileExpertSource::pin_cache_complement(
+         if (arena == nullptr) return;
+         if (pinned_ok) (void) cudaFreeHost(arena);
+         else {
+-            if (partial_pin > 0) (void) cudaHostUnregister(arena);
++            if (!segments.empty()) {
++                for (const PinSegment& s : segments) (void) cudaHostUnregister((uint8_t*) arena + s.lo);
++            } else if (partial_pin > 0) {
++                (void) cudaHostUnregister(arena);
++            }
+             if (locked > 0) strata::platform::unlock_resident((uint8_t*) arena + lock_off, locked);
+             std::free(arena);
+         }
+@@ -3910,15 +3923,79 @@ bool FileExpertSource::pin_cache_complement(
+                     return (uint64_t) ((v != nullptr && std::atof(v) > 0 ? std::atof(v) : 24.0) * 1073741824.0);
+                 }();
+                 if (paced) {
+-                    // #1250: the pages are taken in 1 GiB steps by ordinary page faults (which reclaim file cache as
+-                    // they need to), each only while the RAM available (the cgroup's room included) stays above the
+-                    // reserve; then the pages that are there are page-locked in ONE registration (nothing is
+-                    // allocated then, the driver only pins them), so a blob never straddles two registrations.  The
+-                    // hottest experts come first in the arena: they are the pinned ones; the rest is locked pageable
+-                    // memory, as when the driver refuses the page-locking.
++                    // #1250: the pages are taken in 1 GiB steps, each only while the RAM available (the cgroup's room
++                    // included) stays above the reserve, so the file cache is reclaimed step by step.  The hottest
++                    // experts come first in the arena: they are the pinned ones; the rest is locked pageable memory, as
++                    // when the driver refuses the page-locking.
++                    //
++                    // STRATA_PIN_SEGMENTS (default 1): each step is its own registration of about 1 GiB, made before
++                    // anything is written into it.  ONE registration of the touched arena (=0, the way before) can loop
++                    // for half an hour or more on kernels that type pageblocks as CMA with no CMA area: a long-term pin
++                    // migrates the pages it finds in those blocks and pins the whole range again, while compaction moves
++                    // other pages into them.  The pages a pin faults in itself are allocated outside those blocks, so
++                    // there is nothing to move, and a retry would redo one segment, not the arena.  Every cut is a
++                    // page-aligned blob start: no page is registered twice and no blob spans two registrations.
+                     constexpr uint64_t kStep = 1ull << 30, kPage = 4096;
++                    static const bool segmented = [] {
++                        const char* v = std::getenv("STRATA_PIN_SEGMENTS");
++                        return v == nullptr || std::atoi(v) != 0;
++                    }();
+                     uint64_t got = 0;
+                     const char* stop = nullptr;
++                    if (segmented) {
++                        // the page-aligned blob starts, ascending: where a segment may end
++                        std::vector<uint64_t> cuts;
++                        cuts.reserve(offsets.size() / 4 + 1);
++                        for (size_t i = 0; i < offsets.size(); ++i)
++                            if (offsets[i] != kNoComplement && offsets[i] > 0 && offsets[i] < bytes && offsets[i] % kPage == 0)
++                                cuts.push_back(offsets[i]);
++                        std::sort(cuts.begin(), cuts.end());
++                        cuts.erase(std::unique(cuts.begin(), cuts.end()), cuts.end());
++                        const auto t0 = std::chrono::steady_clock::now();
++                        double slowest = 0.0;
++                        while (got < bytes) {
++                            uint64_t hi = bytes;
++                            if (got + kStep < bytes) {   // the last cut within the step, else the first one after it
++                                auto it = std::upper_bound(cuts.begin(), cuts.end(), got + kStep);
++                                if (it != cuts.begin() && *(it - 1) > got) hi = *(it - 1);
++                                else if (it != cuts.end()) hi = *it;
++                            }
++                            uint64_t avail_now = 0;
++                            if (!available_memory_bytes(avail_now) || !detail::pin_step_fits(avail_now, hi - got, pace_reserve)) {
++                                stop = "the RAM left would fall under the reserve";
++                                break;
++                            }
++#if defined(__linux__)
++                            if (numa.place) numa.touch_step((uint8_t*) arena, got, hi);   // slices on their nodes first
++#endif
++                            const auto s0 = std::chrono::steady_clock::now();
++                            void* alias = nullptr;
++                            if (cudaHostRegister((uint8_t*) arena + got, (size_t) (hi - got),
++                                                 cudaHostRegisterMapped | cudaHostRegisterPortable) != cudaSuccess) {
++                                (void) cudaGetLastError();
++                                stop = "the driver refused to page-lock it";
++                                break;
++                            }
++                            if (cudaHostGetDevicePointer(&alias, (uint8_t*) arena + got, 0) != cudaSuccess || alias == nullptr) {
++                                (void) cudaGetLastError();
++                                (void) cudaHostUnregister((uint8_t*) arena + got);
++                                stop = "no device alias";
++                                break;
++                            }
++                            slowest = std::max(slowest, std::chrono::duration<double>(std::chrono::steady_clock::now() - s0).count());
++                            segments.push_back({got, hi, (const uint8_t*) alias});
++                            if (segments.back().dev != segments.front().dev + (size_t) got) segments_contiguous = false;
++                            got = hi;
++                        }
++                        if (!segments.empty()) {
++                            device = segments.front().dev;
++                            partial_pin = got;
++                        }
++                        std::fprintf(stderr, "FileExpertSource: %.2f GiB page-locked in %zu segments in %.1f s (the slowest "
++                                             "%.1f s)%s\n", (double) partial_pin / 1073741824.0, segments.size(),
++                                     std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count(), slowest,
++                                     segments_contiguous ? "" : "; their device aliases are not one run");
++                    } else {
+                     while (got < bytes) {
+                         const uint64_t step = std::min<uint64_t>(kStep, bytes - got);
+                         uint64_t avail_now = 0;
+@@ -3958,12 +4035,16 @@ bool FileExpertSource::pin_cache_complement(
+                             if (stop == nullptr) stop = "the driver refused to page-lock it";
+                         }
+                     }
++                    }   // STRATA_PIN_SEGMENTS=0
+                     lock_off = partial_pin;
+                     char msg[240];
+                     if (stop != nullptr)
+                         std::snprintf(msg, sizeof msg, "WARNING: only %.2f of %.2f GiB could be page-locked (%s); the rest is "
+                                       "resident but pageable, so its copies to the GPU go through the CPU (#1250)",
+                                       (double) partial_pin / 1073741824.0, (double) bytes / 1073741824.0, stop);
++                    else if (!segments.empty())
++                        std::snprintf(msg, sizeof msg, "%.2f GiB page-locked in %zu segments, each before it was written",
++                                      (double) partial_pin / 1073741824.0, segments.size());
+                     else
+                         std::snprintf(msg, sizeof msg, "%.2f GiB page-locked after taking the pages in steps",
+                                       (double) partial_pin / 1073741824.0);
+@@ -4176,6 +4257,8 @@ bool FileExpertSource::pin_cache_complement(
+     complement_partial_ = complement_registered_ && !(paced && partial_pin >= bytes);
+     complement_locked_ = locked;
+     complement_lock_off_ = lock_off;
++    complement_segments_ = std::move(segments);
++    complement_segments_contiguous_ = segments_contiguous;
+     complement_lent_slots_ = lend ? n_slots - keep_from : budget_lent;   // a budget keeps its own tail of the region
+     complement_lent_slots_ += stage_lent;   // and the split stages' regions: pairs the copy kept of them
+     complement_ready_ = true;
+@@ -4256,7 +4339,7 @@ bool FileExpertSource::reserve_exchanges(int64_t n, std::string& err, int64_t bo
+     bounce = std::max<int64_t>(0, std::min(bounce, n));
+     const uint64_t rotate_total = detail::ExchangeStorage::exchange_bytes_needed(layer_blob_bytes_, (size_t) n, (size_t) bounce);
+     const bool eligible = requested && rotate_total != 0 && rotate_total <= std::numeric_limits<size_t>::max() &&
+-                          complement_pinned_ && !complement_partial_ &&
++                          complement_pinned_ && !complement_partial_ && complement_segments_contiguous_ &&
+                           complement_host_ && complement_device_ && complement_bytes_ > 0;
+     const size_t total = eligible ? (size_t) rotate_total : (size_t) n * (size_t) blob;
+     void* p = nullptr;
+@@ -4704,7 +4787,15 @@ const uint8_t* FileExpertSource::device_alias(int64_t layer, int64_t expert) con
+     if (!soft_in_.empty() && soft_in_[index] != SIZE_MAX)   // soft_commit_exchanges: out is read from its exchange buffer
+         return override_.empty() || override_[index] == nullptr || xstage_dev_ == nullptr
+                    ? nullptr : xstage_dev_ + (size_t) (override_[index] - xstage_);
+-    return complement_device_ + (size_t) complement_offsets_[index];
++    const uint64_t off = complement_offsets_[index];
++    if (!complement_segments_contiguous_) {   // STRATA_PIN_SEGMENTS, aliases not one run: the segment holding the blob
++        auto it = std::upper_bound(complement_segments_.begin(), complement_segments_.end(), off,
++                                   [](uint64_t v, const PinSegment& s) { return v < s.lo; });
++        if (it == complement_segments_.begin()) return nullptr;
++        --it;
++        return off < it->hi ? it->dev + (size_t) (off - it->lo) : nullptr;
++    }
++    return complement_device_ + (size_t) off;
+ }
+ 
+ bool FileExpertSource::pcie_layer(int64_t layer) const {
+-- 
+2.43.0
+

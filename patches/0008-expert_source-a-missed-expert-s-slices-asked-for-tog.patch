@@ -1,0 +1,56 @@
+From e4272cd70966d827885fe4b1e25c0162efe09590 Mon Sep 17 00:00:00 2001
+From: Outcrop <outcrop@localhost>
+Date: Mon, 23 Nov 2026 02:06:45 -0600
+Subject: [PATCH 8/9] expert_source: a missed expert's slices asked for
+ together on Linux (STRATA_FETCH_WILLNEED)
+
+In the low-RAM mode a missed expert is copied from the mapped file slice by slice, and its page faults read one
+read-around window at a time per thread. On a Quadro M6000 machine with 31 GiB of RAM the drive sat idle more than
+half the time while decode waited on it. With STRATA_FETCH_WILLNEED=1 each slice with uncached pages gets one
+POSIX_FADV_WILLNEED for its exact range before the first copy, the Linux counterpart of the PrefetchVirtualMemory call
+fill_many makes on Windows, so a layer's misses are in flight together. A hint changes when the bytes arrive, never
+what they are; residency is counted before the hint, so the page-cache counts stay as they were.
+
+Measured there, off by default, with STRATA_LOOKAHEAD_K=3 (the look-ahead's own read hints for ranks 0-2 only: past
+them, with this hint on, they only add reads), GSM8K answers paired against the same build without either:
+- IQ3_XXS: decode 1.038 times as fast, the prompts' median time 2.93 s against 3.35 s, 43% fewer bytes read.
+- Q2_0, which nearly fits in RAM there: decode 1.021 times as fast, 59% fewer bytes read.
+- IQ3_S, a larger pack: decode 23% faster from the hint alone; with K=3, on a disk capped at 0.5 GB/s it kept 95% of
+  its full-speed decode.
+---
+ src/core/expert_source.cpp | 18 +++++++++++++++++-
+ 1 file changed, 17 insertions(+), 1 deletion(-)
+
+diff --git a/src/core/expert_source.cpp b/src/core/expert_source.cpp
+index 3d0d080..8b48c8a 100644
+--- a/src/core/expert_source.cpp
++++ b/src/core/expert_source.cpp
+@@ -1796,8 +1796,24 @@ bool FileExpertSource::copy_from_files(int64_t layer, int64_t expert, uint8_t* d
+     if (io_pf_ || io_stats_) {   // count what the page cache holds; with io prefetch, read what it does not with pread
+         Span sp[3];
+         const int ns = spans(layer, expert, sp);
++        // STRATA_FETCH_WILLNEED=1 (off by default): every slice with uncached pages is asked for first, one
++        // POSIX_FADV_WILLNEED for its exact range, all queued before the first copy: the Linux counterpart of the
++        // PrefetchVirtualMemory call fill_many makes on Windows.  The copies below then wait on reads already in
++        // flight, where a mapped read's page faults go one read-around window at a time.  A hint changes only when
++        // the bytes arrive, never what they are.  Residency is taken before the hint, so the page-cache counts stay.
++        static const bool fetch_willneed = [] {
++            const char* v = std::getenv("STRATA_FETCH_WILLNEED");
++            return v != nullptr && std::atoi(v) != 0;
++        }();
++        uint64_t pre[3] = {0, 0, 0};
++        if (fetch_willneed) {
++            for (int i = 0; i < ns; ++i) pre[i] = resident_in(sp[i].p, sp[i].n);
++            for (int i = 0; i < ns; ++i)
++                if (sp[i].fd >= 0 && pre[i] < sp[i].n)
++                    (void) posix_fadvise(sp[i].fd, (off_t) sp[i].off, (off_t) sp[i].n, POSIX_FADV_WILLNEED);
++        }
+         for (int i = 0; i < ns; ++i) {
+-            const uint64_t res = resident_in(sp[i].p, sp[i].n);
++            const uint64_t res = fetch_willneed ? pre[i] : resident_in(sp[i].p, sp[i].n);
+             io_cached_.fetch_add(res, std::memory_order_relaxed);
+             io_uncached_.fetch_add(sp[i].n - res, std::memory_order_relaxed);
+             const bool dec = in_decode();
+-- 
+2.43.0
+

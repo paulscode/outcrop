@@ -152,7 +152,7 @@ profiles change, it says so: `outcrop profile diff NAME` shows what is new and `
 | `lib/` | What the command and the console share: presets, profiles, starting and switching the engine |
 | `systemd/` | The services: `outcrop-engine@PRESET`, `outcrop-gateway`, `outcrop-console`, `outcrop-boot` (the boot default), `outcrop-ollama-bridge`, and the chat's web search (`outcrop-fetch`, `outcrop-searxng`) |
 | `setup/` | The install steps `setup.sh` runs; `harden.sh` (an optional firewall, LAN only, and SSH keys only) |
-| `patches/` | Strata patches for Maxwell (`sm_52`) |
+| `patches/` | Strata patches: the Maxwell (`sm_52`) kernels (0001-0006), and for the low-RAM mode the RAM tier's page-locking, read hints and an optional tail skip (0007-0009); an update applies them and rebuilds the engine |
 | `bench/` | Speed, quality and API checks |
 | `examples/` | [bug-hunt](examples/bug-hunt/): a security review of any codebase with an AI agent and your own server |
 | `~/.outcrop/` | Everything the install makes, outside the repo: presets.json, models, the engine, logs and state |

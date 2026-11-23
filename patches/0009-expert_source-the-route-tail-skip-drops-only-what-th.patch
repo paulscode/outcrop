@@ -1,0 +1,40 @@
+From 9502edd25e879754ce96f3ae9f36c53e85b2c143 Mon Sep 17 00:00:00 2001
+From: Outcrop <outcrop@localhost>
+Date: Mon, 23 Nov 2026 02:06:45 -0600
+Subject: [PATCH 9/9] expert_source: the route tail skip drops only what the
+ disk would serve (STRATA_TAIL_SKIP_FILE_ONLY)
+
+The route tail skip drops a low-rank miss wherever it would be served from. In the low-RAM mode a miss that the
+page-locked RAM tier holds is cheap to fetch (PCIe, or the CPU from RAM); a miss in the file tier is a disk read, which
+is what the skip saves. With STRATA_TAIL_SKIP_FILE_ONLY=1 the skip computes the RAM tier's misses and drops only the
+ones the disk would serve.
+
+A trade, off by default. Measured on a Quadro M6000 machine with 31 GiB of RAM: with the IQ3_S pack the KL divergence
+from the exact engine falls from 0.0550 to 0.0305 (two exact runs differ by 0.0149) and top-1 agreement rises from
+92.3% to 94.5%, at no cost to decode, where the disk is the limit. With IQ3_XXS and Q2_0, decode is 4.4% and 6.0%
+slower: the experts it now computes cost more than the reads it no longer saves.
+---
+ src/core/expert_source.cpp | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/src/core/expert_source.cpp b/src/core/expert_source.cpp
+index 8b48c8a..f6a5c3b 100644
+--- a/src/core/expert_source.cpp
++++ b/src/core/expert_source.cpp
+@@ -5063,6 +5063,13 @@ void expert_pool_dispatch_multi(ExpertDispatch& d, const float* x_f, const int32
+                 const int32_t e = ids[distinct[q]];
+                 if (e < 0 || e >= d.n_expert || minr[q] < tail_rank) continue;
+                 if (d.host_res[(size_t) d.layers * (size_t) d.n_expert + (size_t) e] >= 0) continue;   // resident
++                // STRATA_TAIL_SKIP_FILE_ONLY=1 (off by default): a miss the page-locked RAM tier holds is cheap (PCIe,
++                // or the CPU from RAM), so it is computed; only the misses the disk would serve are dropped
++                static const bool skip_file_only = [] {
++                    const char* v = std::getenv("STRATA_TAIL_SKIP_FILE_ONLY");
++                    return v != nullptr && std::atoi(v) != 0;
++                }();
++                if (skip_file_only && d.src != nullptr && d.src->pinned(d.layers, e)) continue;
+                 skip_d[q] = true;
+                 --nmiss;
+                 ++d.tail_experts;
+-- 
+2.43.0
+

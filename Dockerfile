@@ -36,7 +36,9 @@ COPY patches/ /outcrop/patches/
 RUN /outcrop/setup/fetch-sources.sh /build/src && mv /build/src/Strata /opt/strata && ln -s /opt/strata /build/src/Strata
 # Strata's own GB10 build (the one its release packages use): sm_121 plus PTX, a portable Armv8.2 CPU side
 # (dotprod + fp16 + i8mm), and the CUDA libraries the engine loads copied beside it ($ORIGIN), so the run-time image
-# needs no toolkit.  Outcrop's Maxwell patches are all gated to sm_52 and change nothing here.  No DeepSeek engine.
+# needs no toolkit.  Outcrop's patches change nothing here: the Maxwell ones are gated to sm_52, 0007 changes only the
+# page-locking of a RAM tier (the GB10 reads its experts from the file in place and keeps none), and 0008-0009 are
+# switches its profile leaves off.  No DeepSeek engine.
 RUN cp -a /build/src/llama.cpp /build/llama-spark \
     && cd /opt/strata && BUILD_DSV41=0 STRATA_GGML_DIR=/build/llama-spark OUT=/opt/outcrop-engine/bin \
          BUILD=/build/spark BUILD_VISION_DIR=/build/spark-vision spark/build_engine.sh
