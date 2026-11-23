@@ -120,6 +120,8 @@ COPY lib/ /opt/outcrop/lib/
 COPY profiles/ /opt/outcrop/profiles/
 COPY setup/ /opt/outcrop/setup/
 COPY docker/ /opt/outcrop/docker/
+# what the console's Lab, `outcrop test` and `outcrop bench` and the Check action run (standard library only)
+COPY bench/quickbench.py bench/qualgate.py bench/apitest.py /opt/outcrop/bench/
 COPY console/outcrop/ /opt/outcrop/console/outcrop/
 COPY console/pyproject.toml console/uv.lock /opt/outcrop/console/
 COPY LICENSE README.md /opt/outcrop/

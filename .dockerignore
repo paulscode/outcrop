@@ -10,6 +10,9 @@
 !web/
 !systemd/
 !docker/
+!bench/quickbench.py
+!bench/qualgate.py
+!bench/apitest.py
 !LICENSE
 !README.md
 

@@ -34,6 +34,12 @@ const dict = {
   '131,072 tokens (about 100,000 words)': 28,
   '262,144 tokens (about 200,000 words)': 29,
   'The console password, whether answers are computed in full, and how long a conversation can be': 30,
+  // actions/check.ts
+  'Check answers and speed': 31,
+  'Asks the model six questions with known answers, then times two short pieces of writing. Takes about a minute; for seeing what a change under Configure did.': 32,
+  'The model did not answer: is the engine still starting? See the Engine health check, then try again.': 33,
+  'answers right': 34,
+  'Writing speed in tokens per second (a token is about three quarters of a word):': 35,
 } as const
 
 /**
