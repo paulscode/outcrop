@@ -17,6 +17,13 @@ export PATH=$CUDA/bin:$PATH
 LOG=$OUTCROP_HOME/logs/build-$NAME.log
 mkdir -p "$OUTCROP_HOME/logs" "$OUTCROP_HOME/bin"
 fail() { echo "building strata-$NAME failed; the end of $LOG:"; tail -n 40 "$LOG"; exit 1; }
+# a build folder made where the sources used to be (the install was moved, or --data changed): CMake refuses to use it,
+# so it is made again (a full build)
+if [ -f "$SRC/build/CMakeCache.txt" ] \
+  && ! grep -qxF -e "CMAKE_HOME_DIRECTORY:INTERNAL=$SRC" -e "CMAKE_HOME_DIRECTORY:INTERNAL=$(cd "$SRC" && pwd -P)" "$SRC/build/CMakeCache.txt"; then
+  echo "   its build folder was made at another path: starting it again"
+  rm -rf "$SRC/build"
+fi
 # (STRATA_PORTABLE unset adds no option at all, so the Ubuntu build's configure line is what it always was)
 cmake -S "$SRC" -B "$SRC/build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DSTRATA_ENABLE_CUDA=ON -DSTRATA_EXPERIMENTAL_SM60=ON \
   -DSTRATA_BUILD_TESTS=OFF -DCMAKE_CUDA_ARCHITECTURES=52 -DCMAKE_CUDA_COMPILER=$CUDA/bin/nvcc \
