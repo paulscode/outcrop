@@ -224,6 +224,8 @@ if [ -n "$NOW" ] && [ "$NOW" != "$PROFILE" ]; then
   python3 "$PROJECT/bin/outcrop" profile apply "$PROFILE" --yes || fail "applying profile $PROFILE failed"
 fi
 step "The engine, the models and their services (the long part)"
+engine_sum() { sha256sum "$OUTCROP_HOME/bin/strata-0211" 2> /dev/null | cut -d' ' -f1; }
+ENGINE_BEFORE=$(engine_sum)
 "$PROJECT/setup/install.sh" "$PROFILE" || fail "the engine install stopped"
 step "The API gateway and the web console"
 "$PROJECT/setup/install-console.sh" || fail "the console install stopped"
@@ -248,6 +250,10 @@ fi
 
 step "Starting the server"
 DEFAULT=$(pf 'print(P.compose(sys.argv[1])["profile"]["default_preset"])' "$PROFILE")
+if [ -n "$ENGINE_BEFORE" ] && [ "$ENGINE_BEFORE" != "$(engine_sum)" ]; then
+  ok "the engine was built again: stopping the old one, so the new one starts"
+  outcrop stop > /dev/null 2>&1 || true
+fi
 outcrop switch "$DEFAULT" || fail "the server did not start (outcrop logs shows why)"
 TESTED=""
 outcrop test && TESTED=1 || warn "the first answer check failed"

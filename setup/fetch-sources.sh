@@ -20,6 +20,24 @@ if [ ! -d Strata ]; then
   $G checkout -q -b m6000 && $G am -q "$PROJECT"/patches/*.patch
   mv Strata.tmp Strata
 fi
+# An install made before Outcrop's patches changed has the old series applied: apply today's again, in place on the same
+# base, so the build directory, the Python environment and the llama.cpp copy stay and the rebuild is incremental.  The
+# series are compared by patch id (their diffs), so applying the same patches again counts as no change.
+ids() { git patch-id --stable | cut -d' ' -f1; }
+have=$(git -C Strata log --reverse -p --format='commit %H' v0.2.11..m6000 | ids)
+want=$(for p in "$PROJECT"/patches/*.patch; do ids < "$p"; done)
+if [ "$have" != "$want" ]; then
+  echo "== Outcrop's engine patches changed: applying them again to Strata $STRATA_COMMIT"
+  G="git -C Strata -c user.name=outcrop -c user.email=outcrop@localhost"
+  before=$(git -C Strata rev-parse m6000)
+  if ! { $G checkout -q -B m6000 v0.2.11 && $G am -q "$PROJECT"/patches/*.patch; }; then
+    # the sources go back to the series the engine was built from, so the two still match
+    $G am --abort 2> /dev/null || true
+    $G checkout -q -B m6000 "$before"
+    echo "Outcrop's patches did not apply to $PWD/Strata (it is left as it was)"
+    exit 1
+  fi
+fi
 if [ ! -d llama.cpp ]; then
   # A shallow fetch of the one commit: GitHub's archive download stalled on this network.
   rm -rf llama.cpp.tmp

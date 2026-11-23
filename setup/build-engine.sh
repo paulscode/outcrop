@@ -24,4 +24,6 @@ cmake -S "$SRC" -B "$SRC/build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DSTRATA_ENA
   -DFETCHCONTENT_SOURCE_DIR_STRATA_LLAMACPP="$SRC/.llama.cpp" > "$LOG" 2>&1 || fail
 cmake --build "$SRC/build" --target strata -j"$(nproc)" >> "$LOG" 2>&1 || fail
 install -m 755 "$SRC/build/strata" "$OUTCROP_HOME/bin/strata-$NAME"
+# what it was built from: setup/install.sh builds it again when the sources' tree is no longer this one
+git -C "$SRC" rev-parse 'HEAD^{tree}' > "$OUTCROP_HOME/bin/strata-$NAME.tree" 2> /dev/null || true
 echo "built $OUTCROP_HOME/bin/strata-$NAME from $(git -C "$SRC" log --oneline -1)"

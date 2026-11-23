@@ -48,6 +48,10 @@ if [ ! -x /usr/local/cuda-12.9/bin/nvcc ]; then
 fi
 
 echo "== 3/8 sources: Strata v0.2.11 with the Maxwell patches, llama.cpp at Strata's pin"
+ENGINE=$OUTCROP_HOME/bin/strata-0211
+src_tree() { git -C "$OUTCROP_HOME/src/Strata" rev-parse 'HEAD^{tree}' 2> /dev/null || true; }
+# an engine built before Outcrop recorded its sources was built from them as they stand now, before any new patch
+[ -x "$ENGINE" ] && [ ! -s "$ENGINE.tree" ] && src_tree > "$ENGINE.tree"
 "$PROJECT/setup/fetch-sources.sh" "$OUTCROP_HOME/src"
 cd "$OUTCROP_HOME/src"
 
@@ -56,7 +60,16 @@ echo "== 4/8 Python environment for the server and the pack tools"
 Strata/.venv/bin/pip -q install -r Strata/requirements.txt
 
 echo "== 5/8 engine (about 5 minutes) and the CPU picture encoder"
-[ -x "$OUTCROP_HOME/bin/strata-0211" ] || "$PROJECT/setup/build-engine.sh" "$OUTCROP_HOME/src/Strata" 0211
+if [ ! -x "$ENGINE" ] || [ "$(cat "$ENGINE.tree" 2> /dev/null)" != "$(src_tree)" ]; then
+  if [ -x "$ENGINE" ]; then
+    echo "   its sources changed (Outcrop's patches): building it again"
+    # the build takes several GB of RAM, which a running engine on a 32 GB machine leaves no room for
+    if command -v outcrop > /dev/null && outcrop stop > /dev/null 2>&1; then
+      echo "   the engine is stopped while it builds (./setup.sh starts it again; by hand: outcrop switch PRESET)"
+    fi
+  fi
+  "$PROJECT/setup/build-engine.sh" "$OUTCROP_HOME/src/Strata" 0211
+fi
 [ -x "$OUTCROP_HOME/bin/strata-vision" ] || "$PROJECT/setup/build-vision.sh" "$OUTCROP_HOME/src/Strata"
 
 echo "== 6/8 models for profile $PROFILE: packs $PACKS, the shared n-gram table and the picture encoder's weights"
