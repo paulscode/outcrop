@@ -7,11 +7,24 @@ set -euo pipefail
 P=$(cd "$(dirname "$0")/.." && pwd)
 : "${OUTCROP_HOME:?}"
 U=outcrop
-mkdir -p "$OUTCROP_HOME"/{state,cfg,logs/units,models,data/packs,data/mtp}
+# The models volume is mounted beside the data volume (/mnt/models, /mnt/data), never inside it (startos/utils.ts says
+# why), and $OUTCROP_HOME/models and data are links to it.  Where an older version mounted it, an empty folder is left
+# in the data volume: it becomes the link.
+for d in models data; do
+  l="$OUTCROP_HOME/$d"
+  [ -L "$l" ] && continue
+  if [ -e "$l" ] && ! rmdir "$l" 2> /dev/null; then
+    echo "$l should be empty (the models are in the models volume), but it is not, or something is still mounted there:" \
+      "restart the server, then start Outcrop again" >&2
+    exit 1
+  fi
+  ln -s "/mnt/$d" "$l"
+done
+mkdir -p "$OUTCROP_HOME"/{state,cfg,logs/units} /mnt/models /mnt/data/{packs,mtp}
 # the volumes are mounted root-owned: hand over whatever is not the service user's yet (seconds, even with the models)
 # (searxng/ stays root:977: SearXNG's settings, below)
 find "$OUTCROP_HOME" -xdev -path "$OUTCROP_HOME/searxng" -prune -o \( ! -user "$U" -o ! -group "$U" \) -exec chown -h "$U:$U" {} +
-find "$OUTCROP_HOME/models" "$OUTCROP_HOME/data" -mindepth 0 -maxdepth 0 \( ! -user "$U" \) -exec chown "$U:$U" {} +
+find /mnt/models /mnt/data -xdev \( ! -user "$U" -o ! -group "$U" \) -exec chown -h "$U:$U" {} +
 chmod 700 "$OUTCROP_HOME/state" "$OUTCROP_HOME/cfg"
 # the data volume is the service user's alone: the page fetcher's user (outcrop-fetch) and SearXNG's (977) cannot read it
 chmod 750 "$OUTCROP_HOME"
