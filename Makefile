@@ -7,14 +7,15 @@
 #   make test-builds      fast build of $(TEST_ARCH)       -> builds/<version>/outcrop_<arch>-040.s9pk + SHA256SUMS
 #   make release-builds   every architecture, clean tree -> builds/<version>/outcrop_<arch>-040.s9pk + SHA256SUMS
 #   make verify-040       check the built s9pks (version, OS floor, architecture, GPU access, signer)
-#   make install-test     sideload the $(TEST_ARCH) build to $(HOST)
-#   (TEST_ARCH=aarch64 HOST=YOUR-SERVER.local for the GB10)
+#   make install-test HOST=YOUR-SERVER.local   sideload the $(TEST_ARCH) build to that server
+#   (TEST_ARCH=aarch64 for a GB10)
 #   make release-publish  after SHA256SUMS.asc is in builds/<version>/: the GitHub release, then the registry
 #
 # The Ubuntu install does not use any of this (./setup.sh).
 
 START_CLI ?= start-cli-2.8.0
-HOST ?= YOUR-SERVER.local
+# the StartOS server install-test sideloads to: required, no default
+HOST ?=
 TEST_ARCH ?= x86_64
 # the buildx builder start-cli builds with: Outcrop's own, whose cache budget (docker/buildkitd.toml) keeps the CUDA
 # engines between builds (each takes 20 min on amd64, over 2 h under qemu on arm64)
@@ -106,6 +107,7 @@ builder:
 	  docker buildx create --name $(BUILDER) --driver docker-container --buildkitd-config docker/buildkitd.toml --bootstrap
 
 install-test:
+	@test -n "$(HOST)" || { echo "name the server: make install-test HOST=YOUR-SERVER.local"; exit 1; }
 	scp -q $(BUILD_DIR)/$(PKG_ID)_$(TEST_ARCH)-040.s9pk start9@$(HOST):/tmp/$(PKG_ID).s9pk
 	ssh start9@$(HOST) 'sudo -n start-cli package install -s /tmp/$(PKG_ID).s9pk && rm -f /tmp/$(PKG_ID).s9pk'
 

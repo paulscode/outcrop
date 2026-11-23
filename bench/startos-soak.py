@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""startos-soak.py [--minutes 25] [--conversations 4] [--host YOUR-SERVER.local]  - does a preset stay below StartOS's memory
+"""startos-soak.py [--minutes 25] [--conversations 4] --host YOUR-SERVER.local  - does a preset stay below StartOS's memory
 line in use, not only at start?  Run from another computer, against the preset that runs now.
 
 It rotates between several long conversations (each its own few-thousand-token document, growing a turn at a time), so
@@ -22,7 +22,8 @@ from pathlib import Path
 ap = argparse.ArgumentParser()
 ap.add_argument("--minutes", type=float, default=25)
 ap.add_argument("--conversations", type=int, default=4)
-ap.add_argument("--host", default=os.environ.get("HOST", "YOUR-SERVER.local"))
+ap.add_argument("--host", default=os.environ.get("HOST"), required=not os.environ.get("HOST"),
+                help="the StartOS server (or $HOST), e.g. YOUR-SERVER.local")
 a = ap.parse_args()
 TOKEN = Path(os.environ.get("OUTCROP_TOKEN_FILE") or Path.home() / ".config/outcrop-test/token").read_text().strip()
 OUT = Path(__file__).resolve().parent / "results" / f"startos-soak-{a.host.split('.')[0]}-{time.strftime('%Y%m%d-%H%M', time.gmtime())}.jsonl"

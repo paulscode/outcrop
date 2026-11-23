@@ -9,7 +9,7 @@
 #   4. records the host's counters before, after the switch, and after the bench: StartOS's memory.high events for its
 #      services, memory and IO pressure, and the bytes read from the disk holding the models
 #
-# Needs: ssh to the server as start9 with sudo (HOST, default YOUR-SERVER.local), a token in $OUTCROP_TOKEN_FILE (default
+# Needs: ssh to the server as start9 with sudo (HOST=YOUR-SERVER.local, required), a token in $OUTCROP_TOKEN_FILE (default
 # ~/.config/outcrop-test/token).  BASE=PRESET starts from that preset's settings (the GB10's prefill and draft
 # options) instead of a bare one, CONTEXT sets the context (default 262144), and ARGS
 # adds engine options ("--ple-io ram").  Writes bench/results/startos-<host>-<NAME>-<date>.json.
@@ -18,7 +18,7 @@ NAME=${1:?usage: startos-variant.sh NAME PACK [BUDGET_GIB|auto] [CONV_CACHE_MIB|
 PACK=${2:?pack: q2_0, iq3_xxs or iq3_s}
 BUDGET=${3:-auto}
 CONV=${4:-default}
-HOST=${HOST:-YOUR-SERVER.local}
+HOST=${HOST:?name the server: HOST=YOUR-SERVER.local}
 TOKEN_FILE=${OUTCROP_TOKEN_FILE:-$HOME/.config/outcrop-test/token}
 HERE=$(cd "$(dirname "$0")" && pwd)
 OUT=$HERE/results/startos-${HOST%%.*}-$NAME-$(date -u +%Y%m%d-%H%M).json

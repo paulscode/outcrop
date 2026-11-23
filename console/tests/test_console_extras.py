@@ -79,6 +79,22 @@ def test_memory_unified(c):
     assert "GPU's share" in m["ram"]["layers"][0]["note"]
 
 
+def test_memory_unified_never_more_than_the_ram(c):
+    """The GPU's layers are clamped like the others: on a small machine (CI's 16 GB runner) they still add up to its RAM."""
+    time.sleep(1.5)
+    live = c.app.state.live
+    live.gpu_static = dict(live.gpu_static, memory="unified", vram_total_mib=None)
+    engine = live.engine
+    live.engine = {**(engine or {}), "engine": {**((engine or {}).get("engine") or {}), "expert_cache_mib": 64 << 20}}
+    try:
+        m = c.get("/api/memory").json()
+    finally:
+        live.engine = engine
+    total = sum(x["gib"] for x in m["ram"]["layers"])
+    assert abs(total - m["ram"]["total_gib"]) < 2.0
+    assert all(x["gib"] >= 0 for x in m["ram"]["layers"])
+
+
 def test_energy_shape(c):
     e = c.get("/api/energy?days=7").json()
     assert "days" in e and "GPU only" in e["note"]

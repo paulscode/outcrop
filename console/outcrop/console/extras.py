@@ -307,14 +307,19 @@ def memory(h) -> dict:
     if unified:
         # One memory for the CPU and the GPU (a GB10): the GPU's layers are part of the "used" RAM, not a card of their
         # own.  The engine's KV cache and buffers are not reported separately, so they stay in "everything else".
-        gpu = [dict(lr, gib=round(lr["mib"] / 1024, 1)) for lr in vram if lr["key"] in ("experts", "dense", "mtp")]
+        # Clamped like the other layers: together they hold at most the used RAM the conversation cache leaves.
+        room = max(0.0, nonfree - convcache)
+        gpu = []
+        for lr in vram:
+            if lr["key"] in ("experts", "dense", "mtp"):
+                gib = min(lr["mib"] / 1024, room)
+                room -= gib
+                gpu.append({k: v for k, v in lr.items() if k != "mib"} | {"gib": round(gib, 1)})
         for lr in gpu:
-            del lr["mib"]
             lr["note"] = lr["note"].replace("kept on the card", "kept in the GPU's share")
-        gpu_gib = sum(lr["gib"] for lr in gpu)
         for lr in ram:
             if lr["key"] == "other":
-                lr["gib"] = round(max(0.0, other + arena - gpu_gib), 1)
+                lr["gib"] = round(room, 1)
                 lr["note"] = "the engine's KV cache and buffers, the system, the console, other programs"
         ram = gpu + [lr for lr in ram if lr["key"] != "arena"]
         vram = []

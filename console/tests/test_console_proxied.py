@@ -84,10 +84,10 @@ def test_forwarded_is_never_read(app):
 def test_server_names_on_startos(monkeypatch):
     """In the container, apps are told the names StartOS published (gateway.hosts), not the container's own."""
     from outcrop.common import config
-    net = config.Net(extra_hosts=["fd12:3456:789a:1:8226:5289:a554:40c8", "192.168.1.66", "YOUR-SERVER.local",
+    net = config.Net(extra_hosts=["fd12:3456:789a:1:8226:5289:a554:40c8", "192.168.1.66", "myserver.local",
                                   "abcdefghij.onion"])
     monkeypatch.setenv("OUTCROP_PLATFORM", "startos")
-    assert config.server_names(net) == ("YOUR-SERVER.local", ["192.168.1.66", "fd12:3456:789a:1:8226:5289:a554:40c8"])
+    assert config.server_names(net) == ("myserver.local", ["192.168.1.66", "fd12:3456:789a:1:8226:5289:a554:40c8"])
     monkeypatch.delenv("OUTCROP_PLATFORM")
     import socket
     assert config.server_names(net)[0] == f"{socket.gethostname()}.local"
