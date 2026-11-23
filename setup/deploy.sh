@@ -1,5 +1,5 @@
 #!/bin/bash
-# deploy.sh [--force]  - on the server: bring this clone up to origin/main and apply what changed.
+# deploy.sh [--force]  - on the server: bring this clone up to the branch it follows and apply what changed.
 #
 # - What changed is measured from the last deploy that finished ($OUTCROP_HOME/state/deployed), so a deploy that failed
 #   halfway is completed by the next run, even when there is nothing new to pull.  --force applies everything.
@@ -21,14 +21,17 @@ FORCE=""
 
 if [ -z "${DEPLOY_REEXEC:-}" ]; then
   # ------------------------------------------------------------------------------------------------------ pull
-  git fetch --quiet origin
+  git fetch --quiet
+  # the remote branch this clone follows: origin/master in a clone of the public repository
+  up=$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2> /dev/null) \
+    || { echo "$PROJECT is not on a branch that follows a remote one: git switch master, then run this again" >&2; exit 1; }
   if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
     echo "local changes in $PROJECT; commit or remove them first:" >&2
     git status --short --untracked-files=no >&2
     exit 1
   fi
   old=$(git rev-parse HEAD)
-  git merge --ff-only --quiet origin/main
+  git merge --ff-only --quiet "$up"
   new=$(git rev-parse HEAD)
   if [ "$old" != "$new" ] && git diff --name-only "$old" "$new" | grep -qx 'setup/deploy.sh'; then
     say "deploy.sh changed: running the new copy"
