@@ -40,6 +40,15 @@ const dict = {
   'The model did not answer: is the engine still starting? See the Engine health check, then try again.': 33,
   'answers right': 34,
   'Writing speed in tokens per second (a token is about three quarters of a word):': 35,
+  // actions/profile.ts
+  'Update hardware settings': 36,
+  'Takes the newest settings for your kind of machine (its hardware profile), which an update of Outcrop may have improved. Your choices under Configure, the boot preset and the network settings are kept.': 37,
+  'If there is anything new, Outcrop restarts to use it (a few minutes). Changes made to the presets in the web console’s editor are replaced by the profile’s; a copy of the old file is kept.': 38,
+  'Already up to date: nothing new in the hardware profile': 39,
+  'Updated to the newest settings of the hardware profile': 40,
+  'Outcrop is restarting to use them.': 41,
+  'Outcrop uses them when it starts.': 42,
+  'What changed is below.': 43,
 } as const
 
 /**
