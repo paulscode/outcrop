@@ -44,10 +44,18 @@ certificate it offers, so your browser trusts the console. Then sign in with the
 
 ### On StartOS
 
-Outcrop is also a [StartOS](https://start9.com) 0.4 service: install it from the paulscode registry in the StartOS
-marketplace, or sideload its `.s9pk` from the [releases](https://github.com/paulscode/outcrop/releases). It needs the
-same hardware, plus [startos-nvidia-legacy](https://github.com/paulscode/startos-nvidia-legacy) for the driver.
-[docs/STARTOS.md](docs/STARTOS.md) has the details and what differs from an Ubuntu install.
+Outcrop is also a [StartOS](https://start9.com) 0.4 service: install it from the paulscode registry
+(`https://start9.paulscode.com`) in the StartOS marketplace, or sideload its `.s9pk` from the
+[releases](https://github.com/paulscode/outcrop/releases). It runs on two kinds of server:
+
+- **x86-64 with a Quadro M6000 or Tesla M40**, the same hardware as above, plus
+  [startos-nvidia-legacy](https://github.com/paulscode/startos-nvidia-legacy) for the driver
+  (`outcrop_x86_64-040.s9pk`);
+- **an NVIDIA GB10 with 128 GB of unified memory** (DGX Spark, ASUS Ascent GX10), with the driver StartOS includes
+  (`outcrop_aarch64-040.s9pk`).
+
+The registry offers each server the package for its hardware. [docs/STARTOS.md](docs/STARTOS.md) has the details and
+what differs from an Ubuntu install.
 
 ## Using it
 
