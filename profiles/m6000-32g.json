@@ -21,15 +21,21 @@
       "iq3_xxs"
     ],
     "default_preset": "speed",
-    "tested": "2026-11-18 on a VM with 16 EPYC 7742 threads, 31 GiB of RAM and the M6000 at PCIe Gen3 x8: speed 40.1 / 43.9 / 31.2 / 40.0 tok/s (chat / code / story / 4K doc), prompts 199 tok/s; balanced 32.4 / 33.6 / 25.3 / 29.1 tok/s, prompts 170 tok/s; both in low-RAM mode, answer checks passed",
+    "tested": "2026-11-23 on a VM with 16 EPYC 7742 threads, 31 GiB of RAM and the M6000 at PCIe Gen3 x8, with engine patches 0007-0009 and these settings: speed 40.4 / 46.9 / 32.0 / 39.1 tok/s (chat / code / story / 4K doc), prompts 194 tok/s; balanced 35.7 / 38.2 / 29.7 / 35.1 tok/s, prompts 180 tok/s; GSM8K answers 2% (speed) and 8% (balanced) faster than without the settings; both in low-RAM mode, answer checks passed",
     "notes": [
       "IQ3_S (quality) needs about 57 GiB of free RAM and is not offered.",
       "The packs do not fit in RAM: the engine keeps the most used experts in RAM and reads the rest from disk (low-RAM mode), so a fast SSD matters.",
+      "Both presets ask for a missed expert's slices together (STRATA_FETCH_WILLNEED, engine patch 0008) and send the look-ahead's read hints for the top three ranks only (STRATA_LOOKAHEAD_K=3): measured, 59% (speed) and 77% (balanced, with its context) less read from the disk, which matters most on a slower SSD.",
+      "balanced has a 131,072-token context: the attention cache's RAM copy is sized for the whole limit, and the 1.7 GiB a halved limit frees hold more experts (3.4% faster). For conversations past 128K tokens, set \"context\": 262144 on it.",
       "Keep other programs light: with IQ3_XXS every GiB they take slows answers down; Q2_0 holds its speed.",
-      "A switch takes about 10 minutes: the packs do not stay in the page cache, so each start reads the pack from disk."
+      "A switch takes about 2 minutes: the packs do not stay in the page cache, so each start reads the pack from disk (81-93 s to the first answer, measured from a cold start)."
     ]
   },
   "common": {
+    "env": {
+      "STRATA_FETCH_WILLNEED": "1",
+      "STRATA_LOOKAHEAD_K": "3"
+    },
     "args": [
       "--adapt-async 1",
       "--conversation-cache-mib 4096",
@@ -45,7 +51,7 @@
     "balanced": {
       "description": "IQ3_XXS pack, 3.0 bits/weight: task average 92.6; with 32 GB it slows down as other programs use RAM",
       "pack": "iq3_xxs",
-      "context": 262144
+      "context": 131072
     }
   }
 }

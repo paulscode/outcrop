@@ -30,7 +30,8 @@ Two quirks carried over from the VM host:
 - **Strata v0.2.11** (commit c3b3f50, engine 0.1.57), released 2026-11-05, with six sm_52 patches from the earlier work on the same card
   rebased onto it. All six applied without conflicts; upstream's changes in the same files (a BF16-as-Q8_0 fallback, a
   head-in-host-memory fallback, AMD barriers, Q5_0 rounding) do not touch the paths the patches add. Upstream still has no
-  Maxwell support of its own. The patches are in `patches/`.
+  Maxwell support of its own. The patches are in `patches/`. Three more (0007-0009, 2026-11-23) are for the low-RAM mode
+  of the 32 GB machines: see the last section.
 - **CUDA 12.9.1**, the last toolkit that compiles for Maxwell. Its runfile repoints `/usr/local/cuda` and adds itself to the
   loader path; `setup/install.sh` gives both back, and the engine finds 12.9 through its RUNPATH.
 - **llama.cpp at Strata's pin (3cf0325)** with the dp4a-to-VMAD patch. GitHub's archive download stalled on this network (as
@@ -274,3 +275,42 @@ reused").
 With the thinking sent back, and pages cut from ~12K to ~6K tokens, the same question took **65 s**. It made 2
 searches and read 2 pages, and each request reused the previous prompt: 766 of 2,080 tokens, then 2,199 of 9,163. The
 rest is reading the pages' new text at about 200 tok/s, the quality preset's prompt speed.
+
+## The 32 GB machines: a start that could stall, and far less read from the disk (2026-11-23)
+
+Measured on the 32 GB reference VM (16 EPYC 7742 threads, 31 GiB of RAM, the M6000 at PCIe Gen3 x8), where both
+presets run in the low-RAM mode: about 19.3 GiB of experts page-locked in RAM, the rest read from the model file. Every
+run starts from a cold page cache, and the 40 GSM8K answers of each run are paired by question against a run without
+the change (1.02 is 2% faster; two runs of the same settings differ by up to about 2.5%).
+
+**The start could stall for minutes, page-locking the RAM tier.** The engine page-locked the whole tier in one
+registration. On these kernels (Ubuntu's 7.0, which types pageblocks as CMA without a CMA area) that registration can
+loop while the kernel's compaction runs: starts here took from 44 s to over 30 minutes, and 131 s and 314 s in one
+evening. Engine patch 0007 page-locks the tier in segments of about 1 GiB, each before anything is written into it. With
+compaction forced throughout a start, the single registration had not finished after 300 s; the segments took 22 s.
+Decode and the answers are unchanged (all 40 GSM8K answers the same).
+
+**Reads, and the context of `balanced`.** Engine patch 0008 (`STRATA_FETCH_WILLNEED=1`) asks for a missed expert's
+slices together, where page faults went one read-around window at a time, and `STRATA_LOOKAHEAD_K=3` keeps the
+look-ahead's own read hints to the top three ranks (past them, they only add reads). Both are set for both presets.
+
+| | `speed` (Q2_0) | `balanced` (IQ3_XXS) |
+|---|---|---|
+| the read hints and K=3: GSM8K answers, paired | 1.021 | 1.038 |
+| a 131,072-token context as well | not taken (0.98 on top of them) | 1.034 more, so 1.082 in all |
+| read from the disk during the 40 answers | 2.3 GB, now 0.9 GB | 137.7 GB, now 32.4 GB |
+| the prompts' median time | 1.84 s, now 1.74 s | 3.35 s, now 2.43 s |
+| on a disk capped at 0.5 GB/s, paired | (it barely reads) | 1.110: the new settings lose nothing there (1.009 against the uncapped disk), the old ones 3% |
+
+The hints change only when bytes arrive, never what they are. The smaller context frees 1.7 GiB of the attention
+cache's RAM copy, which is sized for the whole limit, for more experts; the card keeps 32,768 tokens of it either way,
+so only conversations longer than 128K tokens need `"context": 262144` back. `speed`, whose pack nearly fits, gains
+nothing from it and keeps 262,144.
+
+**The file-only tail skip (engine patch 0009) is a trade, left off.** It computes the RAM tier's misses instead of
+dropping them: closer to the exact model (with the IQ3_S pack, the KL divergence from the exact engine 0.0305 against
+the skip's 0.0550, two exact runs differing by 0.0149), but 6.0% (`speed`) and 4.4% (`balanced`) slower here, the
+experts it now computes costing more than the reads they would have saved. `STRATA_TAIL_SKIP_FILE_ONLY=1` turns it on.
+
+**For an existing install:** `git pull && ./setup.sh update`, then `./setup.sh` (it applies the patches and rebuilds the
+engine, which is stopped while it builds), then `outcrop profile apply m6000-32g` for the new settings.
