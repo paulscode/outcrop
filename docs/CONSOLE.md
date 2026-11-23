@@ -141,7 +141,7 @@ Two choices apply to every preset, each explained where it is chosen, with the r
 
 | Setting | Choices | What it trades |
 | --- | --- | --- |
-| Exact answers (`exact_answers`) | off (the default), on | Off, the engine leaves out a word's smallest contributions (its route tail skip: experts past the seventh) when they would come from RAM or the disk. On computes every word in full, more slowly on a machine that reads from its disk |
+| Exact answers (`exact_answers`) | off (the default), on | Off, the engine leaves out a word's smallest contributions (its route tail skip: experts past the seventh) when they would come from RAM or the disk. On computes every word in full: 3 to 6% slower with 32 GB of RAM, about 1% with every expert in RAM ([FINDINGS.md](FINDINGS.md)) |
 | Longest conversation (`context`) | profile (the default), 131072, 262144 | Every preset's context limit, except the 1M presets'. The memory for it is set aside in advance, so a shorter one leaves more RAM for the experts |
 
 They are in presets.json's `settings` section, which applying a hardware profile keeps, and the same on the Settings page,

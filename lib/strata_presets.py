@@ -172,10 +172,10 @@ SETTINGS = {
         "values": {"off": "Off: faster (recommended)", "on": "On: slower, every answer computed in full"},
         "default": "off",
         "about": "To save time, the engine leaves out the smallest contributions to each word when they would have to be "
-                 "fetched from RAM or the disk. In our tests on 714 questions this changed no answer, but it does make "
-                 "the wording differ slightly from the full computation now and then. On computes every word in full: "
-                 "answers match the model exactly, and they come more slowly when the machine reads from its disk "
-                 "(measured about 23% slower with 32 GB of RAM).",
+                 "fetched from RAM or the disk. In our tests this changed how answers were worded, more often than not, "
+                 "but not how many were right. On computes every word in full, exactly as the model would, and answers "
+                 "come more slowly when the machine reads from its disk: measured 3 to 6% slower with 32 GB of RAM, and "
+                 "about 1% with plenty of RAM.",
     },
     "context": {
         "title": "Longest conversation",

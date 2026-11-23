@@ -3,7 +3,7 @@
     "name": "m6000-base",
     "abstract": true,
     "title": "Quadro M6000 24 GB (Maxwell, sm_52): what every RAM size shares",
-    "about": "The engine switches below are the ones measured fastest on Maxwell (Q8 dense and MTP kernels, f32 dense, expert mode 8). The RAM-size profiles extend this one."
+    "about": "The engine switches below are the ones measured fastest on Maxwell (Q8 dense and MTP kernels, f32 dense, expert mode 8). The RAM-size profiles extend this one. Every profile also asks for a missed expert's slices together (STRATA_FETCH_WILLNEED, engine patch 0008) and sends the look-ahead's read hints for the top three ranks only (STRATA_LOOKAHEAD_K=3): with 32 GB that reads 60-77% less from the disk and, with its 128K context, makes balanced 7-8% faster; with 64 GB, where every expert stays in RAM, it changes nothing (within 0.6%), and when other programs push quality into reading from the disk it reads half as much at the same speed."
   },
   "server": {
     "host": "127.0.0.1",
@@ -33,7 +33,9 @@
       "STRATA_EXP_MODE": "8",
       "STRATA_MTP_Q8_SM60": "1",
       "STRATA_DENSE_F32": "1",
-      "STRATA_NO_ARENA_THP": "1"
+      "STRATA_NO_ARENA_THP": "1",
+      "STRATA_FETCH_WILLNEED": "1",
+      "STRATA_LOOKAHEAD_K": "3"
     },
     "args": [
       "--adapt-async 1"

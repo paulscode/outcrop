@@ -26,16 +26,12 @@
       "IQ3_S (quality) needs about 57 GiB of free RAM and is not offered.",
       "The packs do not fit in RAM: the engine keeps the most used experts in RAM and reads the rest from disk (low-RAM mode), so a fast SSD matters.",
       "Both presets ask for a missed expert's slices together (STRATA_FETCH_WILLNEED, engine patch 0008) and send the look-ahead's read hints for the top three ranks only (STRATA_LOOKAHEAD_K=3): measured, about 60% (speed) and 77% (balanced, with its context) less read from the disk, which matters most on a slower SSD.",
-      "balanced has a 131,072-token context: the attention cache's RAM copy is sized for the whole limit, and the 1.7 GiB a halved limit frees hold more experts (3.4% faster). For conversations past 128K tokens, set \"context\": 262144 on it.",
+      "balanced has a 131,072-token context: the attention cache's RAM copy is sized for the whole limit, and the 1.7 GiB a halved limit frees hold more experts (3.4% faster). For conversations past 128K tokens: outcrop setting context 262144 (or the console's Settings page, or Configure on StartOS).",
       "Keep other programs light: with IQ3_XXS every GiB they take slows answers down; Q2_0 holds its speed.",
       "A switch takes about 2 minutes: the packs do not stay in the page cache, so each start reads the pack from disk (81-93 s to the first answer, measured from a cold start)."
     ]
   },
   "common": {
-    "env": {
-      "STRATA_FETCH_WILLNEED": "1",
-      "STRATA_LOOKAHEAD_K": "3"
-    },
     "args": [
       "--adapt-async 1",
       "--conversation-cache-mib 4096",

@@ -23,7 +23,7 @@ const dict = {
   'Web search': 18,
   // the settings for every preset (actions/config.ts)
   'Exact answers': 19,
-  'To save time, the engine leaves out the smallest contributions to each word when they would have to be fetched from RAM or the disk. In our tests on 714 questions this changed no answer, but the wording can differ slightly from the full computation now and then. On computes every word in full: answers match the model exactly, and they come more slowly on a machine that reads from its disk.': 20,
+  'To save time, the engine leaves out the smallest contributions to each word when they would have to be fetched from RAM or the disk. In our tests this changed how answers were worded, more often than not, but not how many were right. On computes every word in full, exactly as the model would, and answers come more slowly when the machine reads from its disk: measured 3 to 6% slower with 32 GB of RAM, and about 1% with plenty of RAM.': 20,
   'Off is faster, and is what we recommend. On gives exactly what the full model would write, more slowly. Changing it restarts Outcrop (a few minutes).': 21,
   'Off: faster (recommended)': 22,
   'On: slower, every answer computed in full': 23,

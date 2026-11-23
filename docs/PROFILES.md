@@ -39,11 +39,13 @@ What changes with RAM, and why:
   for Q2_0, 50 for IQ3_XXS and 57 for IQ3_S. With less, the engine keeps the most used experts in RAM and reads the
   rest from the model file ("low-RAM" mode): Q2_0 holds its speed there, IQ3_XXS slows down as other programs take RAM,
   and IQ3_S is not worth it. The mode is chosen each time a preset starts, from the RAM free at that moment.
-- **Reading the rest.** In the low-RAM mode the 32 GB profile asks for a missed expert's slices together
-  (`STRATA_FETCH_WILLNEED`, engine patch 0008) and sends the look-ahead's read hints for the top three ranks only
-  (`STRATA_LOOKAHEAD_K=3`), and its `balanced` preset keeps a 131,072-token context, whose smaller attention cache
-  leaves 1.7 GiB more for experts. Measured: about 60% and 77% less read from the disk; `balanced` 7-8% faster
-  (11% on a disk capped at 0.5 GB/s), `speed` as fast as before ([FINDINGS.md](FINDINGS.md), the last section).
+- **Reading the rest.** Every M6000 profile asks for a missed expert's slices together (`STRATA_FETCH_WILLNEED`, engine
+  patch 0008) and sends the look-ahead's read hints for the top three ranks only (`STRATA_LOOKAHEAD_K=3`); the 32 GB
+  profile's `balanced` preset also keeps a 131,072-token context, whose smaller attention cache leaves 1.7 GiB more for
+  experts. Measured with 32 GB: about 60% and 77% less read from the disk, `balanced` 7-8% faster (11% on a disk capped
+  at 0.5 GB/s), `speed` as fast as before. With 64 GB: no change while every expert is in RAM, and half the reads at the
+  same speed when other programs push `quality` into the low-RAM mode ([FINDINGS.md](FINDINGS.md), the last sections).
+  The context limit is also a setting (`outcrop setting context`, the console's Settings page, Configure on StartOS).
 - **The conversation cache.** Strata parks recent conversations in RAM, so returning to a long one (or an agent
   switching between its helpers) does not read the whole prompt again. 2 parked conversations in 4 GiB at 32 and 64 GB,
   up to 16 in 48 GiB on the reference system.

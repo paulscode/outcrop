@@ -314,3 +314,32 @@ experts it now computes costing more than the reads they would have saved. `STRA
 
 **For an existing install:** `git pull && ./setup.sh update`, then `./setup.sh` (it applies the patches and rebuilds the
 engine, which is stopped while it builds), then `outcrop profile apply m6000-32g` for the new settings.
+
+## The read settings with 64 GB, and what exact answers cost (2026-11-23)
+
+**The read settings in every profile.** Patch 0008 and `STRATA_LOOKAHEAD_K=3` moved from the 32 GB profile to
+`m6000-base`, after a check of the 64 GB profile on the reference system with RAM held (the same 40 GSM8K answers,
+paired, each run from a cold page cache):
+
+| `quality` (IQ3_S) with 64 GB | without them | with them |
+|---|---|---|
+| 60 GiB available: every expert in RAM | 43.2 tok/s, 509 MB read | 43.3 tok/s (paired 1.004), 509 MB read |
+| 52 GiB available (other programs using 8): the low-RAM mode | 41.5 tok/s, 5.9 and 5.7 GB read | 41.3 tok/s twice (paired 0.998 and 0.999 against the second run without them, which differed from the first by 0.996), 2.1 and 3.2 GB read |
+
+So nothing changes while every expert is in RAM, and the low-RAM mode reads about half as much at the same speed on
+this system's NVMe drive; on a slower drive the 32 GB results above suggest a gain. The 128 and 256 GB profiles keep
+every expert in RAM, where the settings do nothing.
+
+**Exact answers.** The engine leaves out a token's routed experts past the seventh when they are not on the card
+(upstream's route tail skip). The setting `exact_answers` (`outcrop setting`, the console, Configure on StartOS) turns
+that off. Paired over the same 40 GSM8K answers:
+
+| | `speed` (Q2_0), 32 GB | `balanced` (IQ3_XXS), 32 GB | `quality` (IQ3_S), 32 GB | `quality`, 256 GB |
+|---|---|---|---|---|
+| decode with exact answers | 0.969 | 0.938 | 0.766 (the exploration's test preset) | 0.989 (every expert in RAM) |
+| right answers, default against exact | 40 and 40 | 38 and 38 | (714 questions: 570 and 570) | 38 and 38 |
+| identical texts | 15 of 40 | 16 of 40 | | 13 of 40 |
+
+The skip changes the wording from where its first differing token falls, more often than not, but not how many answers
+are right; for IQ3_S its KL divergence from the exact model is 0.055 against 0.015 between two exact runs. Off stays the
+default.
