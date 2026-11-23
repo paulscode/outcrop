@@ -163,6 +163,74 @@ def startos_budget(p: dict, top: dict, free: int) -> tuple[int, int]:
     return budget, limit_mib
 
 
+# Settings: a few choices that apply to every preset, kept in presets.json's "settings" section (applying a profile keeps
+# it).  Changed with `outcrop setting`, the console's Settings page or StartOS's Configure, which all show `about`: what a
+# setting trades, in plain words.  The values are strings, so all three places can offer them as a list of choices.
+SETTINGS = {
+    "exact_answers": {
+        "title": "Exact answers",
+        "values": {"off": "Off: faster (recommended)", "on": "On: slower, every answer computed in full"},
+        "default": "off",
+        "about": "To save time, the engine leaves out the smallest contributions to each word when they would have to be "
+                 "fetched from RAM or the disk. In our tests on 714 questions this changed no answer, but it does make "
+                 "the wording differ slightly from the full computation now and then. On computes every word in full: "
+                 "answers match the model exactly, and they come more slowly when the machine reads from its disk "
+                 "(measured about 23% slower with 32 GB of RAM).",
+    },
+    "context": {
+        "title": "Longest conversation",
+        "values": {"profile": "As the hardware profile sets it (recommended)",
+                   "131072": "131,072 tokens (about 100,000 words)",
+                   "262144": "262,144 tokens (about 200,000 words)"},
+        "default": "profile",
+        "about": "How much one conversation can hold: the chat so far, or a document and the questions about it. "
+                 "The memory for it is set aside in advance, so a shorter limit leaves more RAM for the model itself, which makes a machine with little RAM faster: with 32 GB, 131,072 tokens made the "
+                 "balanced preset 3 to 5% faster. The presets for a million tokens keep their own length.",
+    },
+}
+
+
+def settings(cfg: dict) -> dict[str, str]:
+    """This machine's settings, each at its default when unset (or set to a value it does not offer)."""
+    s = cfg.get("settings") or {}
+    return {k: (str(s[k]) if str(s.get(k)) in d["values"] else d["default"]) for k, d in SETTINGS.items()}
+
+
+def with_settings(p: dict, s: dict[str, str]) -> dict:
+    """Preset `p` as the settings `s` change it (a copy)."""
+    p = {**p, "env": dict(p.get("env") or {})}
+    if s.get("exact_answers") == "on":
+        p["env"]["STRATA_ROUTE_TAIL_SKIP"] = "0"     # upstream's route tail skip off (drops misses at rank 7 and beyond)
+    if s.get("context", "profile") != "profile" and not p.get("rope"):   # not the 1M presets, which stretch the model's own
+        p["context"] = int(s["context"])
+    return p
+
+
+def set_setting(key: str, value: str) -> dict[str, str]:
+    """Change one setting in presets.json; returns the settings now.  Raises KeyError or ValueError for a setting or a
+    value that does not exist."""
+    key = key.replace("-", "_")
+    if key not in SETTINGS:
+        raise KeyError(f"there is no setting {key!r}: {', '.join(SETTINGS)}")
+    value = str(value).replace(",", "").lower()
+    if value not in SETTINGS[key]["values"]:
+        raise ValueError(f"{key} is one of: {', '.join(SETTINGS[key]['values'])}")
+    cfg = load()
+    cfg["settings"] = {**(cfg.get("settings") or {}), key: value}
+    # in place, as profiles.apply writes it: the console's sandbox sees this file through a bind mount of the file itself
+    with open(PRESETS_FILE, "a+", encoding="utf-8") as f:
+        f.seek(0)
+        f.truncate()
+        f.write(json.dumps(cfg, indent=2) + "\n")
+    return settings(cfg)
+
+
+def effective(cfg: dict) -> dict:
+    """presets.json with the settings applied to every preset: what the engine runs (and what the console shows)."""
+    s = settings(cfg)
+    return {**cfg, "presets": {n: with_settings(p, s) for n, p in (cfg.get("presets") or {}).items()}}
+
+
 def expand(x: str) -> str:
     return x.replace("{outcrop_home}", str(OUTCROP_HOME)).replace("{strata}", str(STRATA))
 
@@ -284,9 +352,12 @@ def render(name: str, cfg: dict | None = None) -> tuple[Path, list[str]]:
     bad = unsafe(cfg, name)
     if bad:
         raise ValueError(f"preset {name!r} refused: " + "; ".join(bad))
-    p = cfg["presets"][name]
+    p = with_settings(cfg["presets"][name], settings(cfg))
     server = cfg.get("server", {})
     args, env, notes = engine_args(p, cfg.get("common", {}))
+    changed = [f"{SETTINGS[k]['title'].lower()}: {v}" for k, v in settings(cfg).items() if v != SETTINGS[k]["default"]]
+    if changed:
+        notes.append("settings: " + ", ".join(changed))
     engine = ENGINE_DIR / p.get("engine", cfg.get("engine", "strata"))
     model_id = server.get("model_id", "qwen3.8-flash-next")
     run = {

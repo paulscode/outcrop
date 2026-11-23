@@ -200,8 +200,8 @@ def suggest(f: dict | None = None) -> tuple[str | None, str, list[str]]:
 # ------------------------------------------------------------------------------------------------- applying
 
 def render(name: str, current: dict | None = None, f: dict | None = None) -> dict:
-    """The presets.json a profile gives. The network sections (server, gateway, console) of an existing file are kept:
-    they are this machine's choices, not the profile's. On a machine with more than one NVIDIA GPU (`f`, from facts()),
+    """The presets.json a profile gives. The network sections (server, gateway, console) and the settings of an existing
+    file are kept: they are this machine's choices, not the profile's. On a machine with more than one NVIDIA GPU (`f`, from facts()),
     the engine and the console are pointed at the card the profile matched, by its UUID."""
     prof = usable(name)
     out = {k: v for k, v in prof.items() if k != "profile"}
@@ -210,7 +210,7 @@ def render(name: str, current: dict | None = None, f: dict | None = None) -> dic
         if g and g.get("uuid"):
             out.setdefault("common", {}).setdefault("env", {})["CUDA_VISIBLE_DEVICES"] = g["uuid"]
     if current:
-        for k in ("server", "gateway", "console"):
+        for k in ("server", "gateway", "console", "settings"):
             if k in current:
                 out[k] = current[k]
     p = prof["profile"]

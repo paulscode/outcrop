@@ -711,6 +711,24 @@ export interface EnergyDay {
   tokens_per_joule: number | null
 }
 
+/** GET/PUT /api/settings/engine: the settings for every preset (presets.json's "settings"). */
+export interface EngineSetting {
+  key: string
+  title: string
+  /** what it trades, in plain words */
+  about: string
+  default: string
+  value: string
+  values: Array<{ value: string; label: string }>
+}
+export interface EngineSettings {
+  settings: EngineSetting[]
+  /** the running preset, if any */
+  running: string | null
+  /** true: the running preset started before the last change, and takes it when restarted (null: unknown) */
+  pending: boolean | null
+}
+
 export interface EnergyInfo {
   days: EnergyDay[]
   today: Partial<EnergyDay>

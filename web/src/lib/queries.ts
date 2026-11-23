@@ -6,6 +6,7 @@ import type {
   BenchRun,
   CaptureState,
   EnergyInfo,
+  EngineSettings,
   EventRow,
   MemoryInfo,
   MetricsSeries,
@@ -55,6 +56,7 @@ export const qk = {
   energy: (days: number) => ['energy', days] as const,
   bench: ['bench'] as const,
   capture: ['capture'] as const,
+  engineSettings: ['engine-settings'] as const,
 }
 
 type Opts<T> = Omit<UseQueryOptions<T, Error, T, readonly unknown[]>, 'queryKey' | 'queryFn'>
@@ -142,6 +144,13 @@ export const useEnergy = (days = 30) =>
 
 export const useBenchRuns = () =>
   useQuery({ queryKey: qk.bench, queryFn: () => getOptional<BenchRun[]>('/api/bench/runs'), refetchInterval: 15_000 })
+
+export const useEngineSettings = () =>
+  useQuery({
+    queryKey: qk.engineSettings,
+    queryFn: () => getOptional<EngineSettings>('/api/settings/engine'),
+    refetchInterval: 15_000,
+  })
 
 export const useCapture = () =>
   useQuery({ queryKey: qk.capture, queryFn: () => getOptional<CaptureState>('/api/capture'), refetchInterval: 10_000 })

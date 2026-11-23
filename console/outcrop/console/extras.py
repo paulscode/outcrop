@@ -621,10 +621,18 @@ def validate_presets(text: str) -> dict:
             errors.append(f"{name}: resident_budget_gib (GiB of experts kept in RAM in low-RAM mode on StartOS) must be "
                           "a whole number, 1 or more")
         try:
-            args, env, notes = SP.engine_args(p, cfg.get("common", {}))
+            args, env, notes = SP.engine_args(SP.with_settings(p, SP.settings(cfg)), cfg.get("common", {}))
             rendered[name] = {"args": args, "env": env, "notes": notes}
         except Exception as e:
             errors.append(f"{name}: {type(e).__name__}: {e}")
+    st = cfg.get("settings")
+    if st is not None and not isinstance(st, dict):
+        errors.append("settings must be an object")
+    for k, v in (st if isinstance(st, dict) else {}).items():
+        if k not in SP.SETTINGS:
+            errors.append(f"settings: there is no setting {k!r} (there are {', '.join(SP.SETTINGS)})")
+        elif str(v) not in SP.SETTINGS[k]["values"]:
+            errors.append(f"settings.{k} is one of {', '.join(SP.SETTINGS[k]['values'])}")
     for k in ("server", "gateway"):
         if k in cfg and not isinstance(cfg[k], dict):
             errors.append(f"{k} must be an object")
@@ -657,6 +665,44 @@ def register(app, h) -> None:
     @app.get("/api/energy")
     def get_energy(days: int = 30, s=Depends(h.session_dep)):
         return energy(h, max(1, min(days, 730)))
+
+    def engine_settings() -> dict:
+        cfg = SP.load()
+        cur = SP.settings(cfg)
+        running = h.ctl.current()
+        # does the running preset have them yet?  Its engine config (written at its start) against what they make it now
+        pending = None
+        if running and running in cfg.get("presets", {}):
+            try:
+                run = json.loads((SP.OUTCROP_HOME / "cfg" / f"{running}.json").read_text(encoding="utf-8"))
+                want = SP.with_settings(cfg["presets"][running], cur)
+                args = run.get("args") or []
+                ctx_now = int(args[args.index("--max-context") + 1]) if "--max-context" in args else None
+                skip_now = (run.get("env") or {}).get("STRATA_ROUTE_TAIL_SKIP")
+                pending = ctx_now != int(want["context"]) or skip_now != want["env"].get("STRATA_ROUTE_TAIL_SKIP")
+            except (OSError, ValueError, KeyError, IndexError):
+                pending = None
+        return {"settings": [{"key": k, "title": d["title"], "about": d["about"], "default": d["default"],
+                              "value": cur[k], "values": [{"value": v, "label": lab} for v, lab in d["values"].items()]}
+                             for k, d in SP.SETTINGS.items()],
+                "running": running, "pending": pending}
+
+    @app.get("/api/settings/engine")
+    def get_engine_settings(s=Depends(h.session_dep)):
+        return engine_settings()
+
+    @app.put("/api/settings/engine")
+    def put_engine_setting(request: Request, body: dict = Body(...), s=Depends(h.session_dep)):
+        key, value = str(body.get("key") or ""), str(body.get("value") or "")
+        before = SP.settings(SP.load())
+        try:
+            now = SP.set_setting(key, value)
+        except (KeyError, ValueError) as e:
+            raise HTTPException(400, e.args[0]) from None
+        if now != before:
+            db.add_event(ctx.con(), "settings.engine", f"setting {key} changed to {now[key]}", actor=s.username,
+                         source=h.ip_of(request), details={"key": key, "from": before.get(key), "to": now[key]})
+        return engine_settings()
 
     @app.put("/api/settings/energy")
     def set_energy(body: dict = Body(...), s=Depends(h.session_dep)):

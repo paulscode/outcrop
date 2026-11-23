@@ -208,3 +208,39 @@ def test_recent_reuse():
     assert extras.recent_reuse(con)["requests"] == 4
     con.execute("DELETE FROM requests")
     assert extras.recent_reuse(con) == {"requests": 0, "prompt_tokens": 0, "reused_tokens": 0, "requests_reused": 0}
+
+
+def test_engine_settings(c):
+    """The settings for every preset: listed with what each trades, changed one at a time, kept in presets.json, and
+    applied to what the engine runs (and what the console shows) but not to the 1M presets' own context."""
+    g = c.get("/api/settings/engine").json()
+    assert [x["key"] for x in g["settings"]] == ["exact_answers", "context"]
+    assert all(x["value"] == x["default"] and x["about"] for x in g["settings"])
+    r = c.put("/api/settings/engine", json={"key": "exact_answers", "value": "on"}, headers=H)
+    assert r.status_code == 200 and r.json()["settings"][0]["value"] == "on"
+    assert c.put("/api/settings/engine", json={"key": "context", "value": "131072"}, headers=H).status_code == 200
+    assert c.put("/api/settings/engine", json={"key": "context", "value": "99"}, headers=H).status_code == 400
+    assert c.put("/api/settings/engine", json={"key": "nope", "value": "on"}, headers=H).status_code == 400
+    cfg = json.loads(c.presets.read_text())
+    assert cfg["settings"] == {"exact_answers": "on", "context": "131072"}
+    assert extras.validate_presets(c.presets.read_text())["ok"]
+    eff = SP.effective(cfg)["presets"]
+    assert eff["quality"]["context"] == 131072 and eff["quality"]["env"]["STRATA_ROUTE_TAIL_SKIP"] == "0"
+    assert eff["quality-1m"]["context"] == 1048576
+    cards = {p["name"]: p for p in c.get("/api/presets").json()["presets"]}
+    assert cards["quality"]["context"] == 131072
+    assert c.con.execute("SELECT count(*) FROM events WHERE kind = 'settings.engine'").fetchone()[0] == 2
+    bad = dict(cfg, settings={"exact_answers": "maybe"})
+    assert not extras.validate_presets(json.dumps(bad))["ok"]
+
+
+def test_profile_apply_keeps_settings(tmp_path, monkeypatch):
+    import profiles as PF
+    presets = tmp_path / "presets.json"
+    monkeypatch.setattr(PF, "PRESETS_FILE", presets)
+    monkeypatch.setattr(SP, "PRESETS_FILE", presets)
+    monkeypatch.setattr(PF, "facts", lambda: {"gpus": []})
+    PF.apply("m6000-32g")
+    SP.set_setting("exact-answers", "on")
+    PF.apply("m6000-64g")
+    assert json.loads(presets.read_text())["settings"] == {"exact_answers": "on"}

@@ -24,7 +24,7 @@ class Controller:
     fake = False
 
     def presets(self) -> dict:
-        return SP.load()
+        return SP.effective(SP.load())
 
     def current(self) -> str | None:
         return LC.current()
@@ -243,7 +243,7 @@ FALLBACK_QUALITY = {"q2_0": (89.1, 2.4), "iq3_xxs": (92.6, 3.0), "iq3_s": (93.3,
 
 
 def preset_cards(ctl: Controller, con) -> list[dict]:
-    cfg = SP.load()
+    cfg = SP.effective(SP.load())
     cur, dflt = ctl.current(), ctl.default()
     cards = []
     for name, p in cfg["presets"].items():

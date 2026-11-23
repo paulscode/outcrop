@@ -12,6 +12,10 @@
   outcrop test | bench      a quick answer check | a quick greedy speed check (about a minute)
   outcrop connect           how to point apps at the server
 
+Settings (for every preset, kept when a profile is applied; also on the console's Settings page):
+  outcrop setting           the settings, what each one trades, and their values here
+  outcrop setting NAME VALUE [--restart]   change one; the running preset takes it when restarted
+
 Hardware profiles (profiles/: which presets this machine gets, from its GPU and RAM):
   outcrop profile [detect]  this machine's GPU, RAM and disk, and the profile that fits it
   outcrop profile list | show NAME | diff NAME | apply NAME [--yes]
@@ -39,6 +43,7 @@ import shlex
 import socket
 import subprocess
 import sys
+import textwrap
 from pathlib import Path
 
 PROJECT = Path(__file__).resolve().parent.parent
@@ -379,6 +384,37 @@ def cmd_bench(_):
                              "--repeat", "1", "--cases", "chat,code,story,doc4k"]).returncode)
 
 
+def cmd_setting(args):
+    words = [a for a in args if not a.startswith("--")]
+    if not words:
+        cur = SP.settings(cfg())
+        for k, d in SP.SETTINGS.items():
+            print(f"{B}{d['title']}{X}  ({k}): {B}{cur[k]}{X}" + (f" {D}(the default){X}" if cur[k] == d["default"] else ""))
+            for v, label in d["values"].items():
+                print(f"  {'>' if v == cur[k] else ' '} {v:<8} {label}")
+            print("  " + textwrap.fill(d["about"], 116, subsequent_indent="  ") + "\n")
+        print(f"{D}change one with: outcrop setting NAME VALUE   (e.g. outcrop setting exact_answers on){X}")
+        return
+    if len(words) != 2:
+        sys.exit("usage: outcrop setting NAME VALUE [--restart]   (outcrop setting lists them)")
+    before = SP.settings(cfg())
+    try:
+        now = SP.set_setting(*words)
+    except (KeyError, ValueError) as e:
+        sys.exit(f"{R}{e.args[0]}{X}")
+    key = words[0].replace("-", "_")
+    if now == before:
+        print(f"{key} is already {now[key]}")
+        return
+    print(f"{G}{key}{X}: {now[key]}  ({SP.SETTINGS[key]['values'][now[key]]})")
+    n = LC.current()
+    if not n:
+        return
+    if "--restart" in args:
+        cmd_restart([])
+    print(f"{D}{n} is running with the old setting: `outcrop restart` applies it (about a minute or two; new requests wait){X}")
+
+
 def cmd_profile(args):
     sub = args[0] if args else "detect"
     rest = args[1:]
@@ -471,7 +507,7 @@ def cmd_profile(args):
 CMDS = {"status": cmd_status, "list": cmd_list, "switch": cmd_switch, "use": cmd_switch, "default": cmd_default,
         "start": cmd_start, "stop": cmd_stop, "restart": cmd_restart, "logs": cmd_logs, "log": cmd_logs, "test": cmd_test,
         "bench": cmd_bench, "connect": cmd_connect, "presets": cmd_list, "boot-start": cmd_boot_start,
-        "profile": cmd_profile, "profiles": cmd_profile}
+        "profile": cmd_profile, "profiles": cmd_profile, "setting": cmd_setting, "settings": cmd_setting}
 OUTCROP = {"token", "tokens", "auth", "gateway", "audit", "console", "alerts", "desktop", "schedule"}
 
 if __name__ == "__main__":

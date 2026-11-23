@@ -1,5 +1,5 @@
 import { Link, useRouterState } from '@tanstack/react-router'
-import { Archive, Bell, FileSearch, LockKeyhole, MessagesSquare, MonitorSmartphone, Palette, UserRound, Zap, type LucideIcon } from 'lucide-react'
+import { Archive, Bell, FileSearch, LockKeyhole, MessagesSquare, MonitorSmartphone, Palette, SlidersHorizontal, UserRound, Zap, type LucideIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { AccountSection } from '@/components/settings/Account'
 import { AlertsSection } from '@/components/settings/Alerts'
@@ -8,12 +8,14 @@ import { ChatSettingsSection } from '@/components/settings/ChatSettings'
 import { BackupSection } from '@/components/settings/Backup'
 import { CertificateSection } from '@/components/settings/Certificate'
 import { CaptureSection, EnergySection } from '@/components/settings/EnergyCapture'
+import { EngineSettingsSection } from '@/components/settings/EngineSettings'
 import { SessionsSection } from '@/components/settings/Sessions'
 import { cn, useReducedMotion } from '@/lib/utils'
 
 const SECTIONS: Array<{ id: string; label: string; icon: LucideIcon }> = [
   { id: 'account', label: 'Account', icon: UserRound },
   { id: 'sessions', label: 'Sessions', icon: MonitorSmartphone },
+  { id: 'engine', label: 'Answers and memory', icon: SlidersHorizontal },
   { id: 'chat', label: 'Chat', icon: MessagesSquare },
   { id: 'alerts', label: 'Alerts', icon: Bell },
   { id: 'energy', label: 'Energy price', icon: Zap },
@@ -115,6 +117,7 @@ export default function Settings() {
       <div className="grid min-w-0 gap-6">
         <AccountSection />
         <SessionsSection />
+        <EngineSettingsSection />
         <ChatSettingsSection />
         <AlertsSection />
         <EnergySection />
