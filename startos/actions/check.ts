@@ -46,9 +46,11 @@ export const check = sdk.Action.withoutInput(
         return {
           answers: String(q.stdout),
           speed: String(b.stdout),
+          // the last line of anything either one wrote to stderr (an error's own line), exit code or not
           errors: [q, b]
-            .filter((r) => r.exitCode !== 0 && String(r.stderr).trim())
-            .map((r) => String(r.stderr).trim().split('\n').pop()),
+            .map((r) => String(r.stderr ?? '').trim())
+            .filter(Boolean)
+            .map((e) => e.split('\n').pop()),
         }
       },
     )
@@ -57,12 +59,16 @@ export const check = sdk.Action.withoutInput(
     const speeds = [
       ...out.speed.matchAll(/^(\w+)\s+prompt.*decode\s+([\d.]+) tok\/s/gm),
     ].map((m) => `${m[1]} ${Math.round(Number(m[2]))}`)
+    // qualgate ends with QUALITY_OK or QUALITY_FAIL: without it the check stopped part way (an engine still settling)
+    const finished = /^QUALITY_(OK|FAIL)/m.test(out.answers)
     const message =
       total === 0
         ? i18n(
             'The model did not answer: is the engine still starting? See the Engine health check, then try again.',
           )
-        : `${passed} / ${total} ${i18n('answers right')}. ${i18n('Writing speed in tokens per second (a token is about three quarters of a word):')} ${speeds.join(', ') || '?'}.`
+        : !finished
+          ? `${i18n('The check stopped part way, after')} ${total} ${i18n('answers (the engine may still be settling after a start): try again in a minute.')}`
+          : `${passed} / ${total} ${i18n('answers right')}. ${i18n('Writing speed in tokens per second (a token is about three quarters of a word):')} ${speeds.join(', ') || '?'}.`
     return {
       version: '1' as const,
       title: i18n('Check answers and speed'),

@@ -40,6 +40,8 @@ const dict = {
   'The model did not answer: is the engine still starting? See the Engine health check, then try again.': 33,
   'answers right': 34,
   'Writing speed in tokens per second (a token is about three quarters of a word):': 35,
+  'The check stopped part way, after': 44,
+  'answers (the engine may still be settling after a start): try again in a minute.': 45,
   // actions/profile.ts
   'Update hardware settings': 36,
   'Takes the newest settings for your kind of machine (its hardware profile), which an update of Outcrop may have improved. Your choices under Configure, the boot preset and the network settings are kept.': 37,
