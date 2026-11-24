@@ -170,3 +170,30 @@ def test_bursts_are_one_off_with_a_cooldown(eng):
     rows = [dict(r) for r in eng.con.execute("SELECT * FROM alerts WHERE rule='auth_burst'")]
     assert len(rows) == 1 and rows[0]["closed_at"] is not None           # sent once, nothing left open
     assert len(eng.sent) == 1 and "failed console sign-ins" in eng.sent[0]
+
+
+def test_hardware_change_is_offered_once_and_a_move_told_once(eng, monkeypatch):
+    import profiles as PF
+    h = {"profile": "m6000-32g", "fits": "m6000-64g", "ram_gib": 63, "change": "more", "download_gb": 57,
+         "message": "This server now has 63 GiB of RAM: hardware profile m6000-64g fits it."}
+    monkeypatch.setattr(PF, "hardware", lambda *a, **k: dict(h))
+    monkeypatch.setattr(PF, "last_move", lambda: None)
+    monkeypatch.delenv("OUTCROP_PLATFORM", raising=False)
+    eng._hardware()
+    eng._hardware()                                     # once while it stays open
+    rows = open_alerts(eng)
+    assert [r["key"] for r in rows] == ["hardware:fits"]
+    assert "outcrop profile apply m6000-64g" in rows[0]["summary"] and len(eng.sent) == 1
+    monkeypatch.setenv("OUTCROP_PLATFORM", "startos")
+    h.update(change="none", fits="m6000-64g", profile="m6000-64g")
+    eng._hardware()
+    assert open_alerts(eng) == [] and "fits this machine again" in eng.sent[-1]
+    # a move made at a start: told once, however often the console restarts
+    move = {"from": "m6000-128g", "to": "m6000-32g", "boot_from": "quality", "boot": "speed", "ram_gib": 31,
+            "at": "2026-11-25T10:00:00"}
+    monkeypatch.setattr(PF, "last_move", lambda: dict(move))
+    n = len(eng.sent)
+    eng._hardware()
+    eng._hardware()
+    assert len(eng.sent) == n + 1 and "moved from hardware profile m6000-128g to m6000-32g" in eng.sent[-1]
+    assert "boot preset is now speed" in eng.sent[-1] and open_alerts(eng) == []

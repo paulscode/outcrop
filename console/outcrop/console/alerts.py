@@ -33,6 +33,7 @@ RULES = {
     "auth_burst": {"label": "A burst of failed sign-ins or bad tokens", "level": "warn", "telegram": True},
     "token_expiry": {"label": "A token expires within 7 days", "level": "info", "telegram": False},
     "job_done": {"label": "A long job has finished", "level": "info", "telegram": True},
+    "hardware": {"label": "The RAM or the GPU changed: another hardware profile fits", "level": "warn", "telegram": True},
 }
 ICON = {"error": "✗", "warn": "⚠", "info": "ℹ", "ok": "✓"}
 
@@ -360,6 +361,8 @@ class Alerts:
                     await asyncio.to_thread(self._disk)
                 if n % 3600 == 30 or n == 5:
                     await asyncio.to_thread(self._expiring)
+                if n % 3600 == 20:
+                    await asyncio.to_thread(self._hardware)
             except Exception:
                 log.exception("alert check failed")
             n += 1
@@ -372,6 +375,33 @@ class Alerts:
             self.open("disk", "disk", f"the disk is {100 - free * 100:.0f}% full ({u.free / 1e9:.0f} GB free)")
         elif free > 0.12:
             self.close("disk", f"the disk has {free * 100:.0f}% free again")
+
+    def _hardware(self) -> None:
+        """The hardware profile presets.json came from against the one that fits now (lib/profiles.py): a bigger one is
+        offered (an alert until it is applied), and a move to a smaller one, made at a start, is told once."""
+        import os
+        import sys
+        sys.path.insert(0, str(config.PROJECT / "lib"))
+        import profiles as PF
+        h = PF.hardware()
+        if h["change"] in ("more", "other", "less"):      # less: on Ubuntu (StartOS moves at the start, before this)
+            how = ("run Update hardware settings under Outcrop's actions in StartOS"
+                   if os.environ.get("OUTCROP_PLATFORM") == "startos" else
+                   f"run `outcrop profile apply {h['fits']}`" if h["change"] == "less" else
+                   f"run `outcrop profile apply {h['fits']}`, then `./setup.sh` in the Outcrop folder to download what it needs")
+            self.open("hardware", "hardware:fits", f"{h['message']} To use it, {how}.",
+                      {"profile": h["profile"], "fits": h["fits"], "ram_gib": h["ram_gib"], "change": h["change"]},
+                      level="error" if h["change"] == "less" else None)
+        elif self.is_open("hardware:fits"):
+            self.close("hardware:fits", f"hardware profile {h['profile']} fits this machine again"
+                       if h["change"] == "none" else None)
+        m = PF.last_move()
+        if m and m.get("at"):
+            key = f"hardware:moved:{m['at']}"
+            if self.ctx.con().execute("SELECT 1 FROM alerts WHERE key=?", (key,)).fetchone() is None:
+                boot = f"; the boot preset is now {m['boot']}" if m.get("boot") != m.get("boot_from") else ""
+                self.open("hardware", key, f"the RAM went down to {m.get('ram_gib')} GiB: Outcrop moved from hardware "
+                          f"profile {m.get('from')} to {m.get('to')}{boot}", dict(m), notify_only=True)
 
     def _expiring(self) -> None:
         con = self.ctx.con()
