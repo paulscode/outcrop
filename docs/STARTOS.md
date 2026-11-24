@@ -73,3 +73,8 @@ sees each app's own address, so a token can be limited to the address of the dev
 ## Updating
 
 Install the new version from the marketplace, or sideload it. The models are kept; only what changed is applied.
+
+A stop, update or restart waits for every health check to finish first, so each check is given one minute: one that
+has not answered by then (a command in the service's container still waiting on its files) is left behind. It shows
+its last result twice more, then reads _This check has not finished after one minute_ (starting, not failure), and its
+answer is shown again once it comes. Before 0.1.0.1, one check that never answered could hold up the stop for good.

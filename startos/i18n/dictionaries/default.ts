@@ -51,6 +51,8 @@ const dict = {
   'Outcrop is restarting to use them.': 41,
   'Outcrop uses them when it starts.': 42,
   'What changed is below.': 43,
+  // utils.ts
+  'This check has not finished after one minute': 46,
 } as const
 
 /**

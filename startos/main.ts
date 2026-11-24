@@ -1,6 +1,6 @@
 import { i18n } from './i18n'
 import { sdk } from './sdk'
-import { mounts } from './utils'
+import { bounded, mounts, unanswered } from './utils'
 
 const H = '/opt/outcrop/docker/health.py'
 
@@ -65,20 +65,29 @@ export const main = sdk.setupMain(async ({ effects }) => {
       ready: {
         display: i18n('Web console'),
         gracePeriod: 120_000,
-        fn: check('console'),
+        fn: bounded(check('console'), unanswered),
       },
       requires: ['prepare'],
     })
     .addHealthCheck('models', {
-      ready: { display: i18n('Models'), fn: check('models') },
+      ready: {
+        display: i18n('Models'),
+        fn: bounded(check('models'), unanswered),
+      },
       requires: ['supervisor'],
     })
     .addHealthCheck('engine', {
-      ready: { display: i18n('Engine'), fn: check('engine') },
+      ready: {
+        display: i18n('Engine'),
+        fn: bounded(check('engine'), unanswered),
+      },
       requires: ['supervisor'],
     })
     .addHealthCheck('web', {
-      ready: { display: i18n('Web search'), fn: check('web') },
+      ready: {
+        display: i18n('Web search'),
+        fn: bounded(check('web'), unanswered),
+      },
       requires: ['supervisor'],
     })
 })
