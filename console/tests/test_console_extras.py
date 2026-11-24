@@ -214,7 +214,7 @@ def test_engine_settings(c):
     """The settings for every preset: listed with what each trades, changed one at a time, kept in presets.json, and
     applied to what the engine runs (and what the console shows) but not to the 1M presets' own context."""
     g = c.get("/api/settings/engine").json()
-    assert [x["key"] for x in g["settings"]] == ["exact_answers", "context"]
+    assert [x["key"] for x in g["settings"]] == ["exact_answers", "context", "packs"]
     assert all(x["value"] == x["default"] and x["about"] for x in g["settings"])
     r = c.put("/api/settings/engine", json={"key": "exact_answers", "value": "on"}, headers=H)
     assert r.status_code == 200 and r.json()["settings"][0]["value"] == "on"

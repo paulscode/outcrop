@@ -120,7 +120,8 @@ def cmd_list(_):
         mark = (">" if n in now else " ") + ("*" if n == dflt else " ")
         ctx = int(p["context"])
         size = f"{ctx / 1048576:g}M" if ctx >= 1048576 else f"{ctx // 1024}K"
-        print(f"{mark} {B}{n:14s}{X} {p['pack']:8s} {size:>5s} ctx  {D}{p.get('description', '')}{X}")
+        absent = f"{Y}(pack not on this machine){X} " if PF.not_downloaded(c, n) else ""
+        print(f"{mark} {B}{n:14s}{X} {p['pack']:8s} {size:>5s} ctx  {absent}{D}{p.get('description', '')}{X}")
     print(f"{D}> running   * started at boot{X}")
 
 

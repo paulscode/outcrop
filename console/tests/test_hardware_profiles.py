@@ -1,0 +1,214 @@
+"""Following hardware changes (lib/profiles.py hardware(), follow()) and keeping one model pack ("Models to keep"):
+less RAM moves to the profile that fits at the next start; more RAM or another GPU is only offered; a small disk keeps
+the boot preset's pack only, and the packs no longer kept are removed (never the shared files)."""
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+import outcrop_control as LC
+import profiles as P
+
+ROOT = Path(__file__).resolve().parents[2]
+M6000 = {"name": "Quadro M6000 24GB", "vram_mib": 24576, "memory": "discrete", "pcie": "Gen3 x16", "index": "0", "uuid": "GPU-2"}
+GB10 = {"name": "NVIDIA GB10", "vram_mib": 0, "memory": "unified", "pcie": "Gen1 x1", "index": "0", "uuid": "GPU-1"}
+
+
+def machine(ram, gpu=M6000, arch="x86_64"):
+    return {"gpus": [gpu], "ram_gib": ram, "cpus": 36, "os": {}, "driver": "580.178.04", "arch": arch,
+            "disk": {"path": "/x", "free_gb": 500}}
+
+
+@pytest.fixture
+def home(tmp_path, monkeypatch):
+    """A machine of its own: presets.json, the state and the packs under tmp_path."""
+    monkeypatch.setattr(P, "OUTCROP_HOME", tmp_path)
+    monkeypatch.setattr(P, "PRESETS_FILE", tmp_path / "presets.json")
+    monkeypatch.setattr(P, "STATE", tmp_path / "state")
+    monkeypatch.setattr(P, "HARDWARE_FILE", tmp_path / "state" / "hardware.json")
+    (tmp_path / "state").mkdir()
+    return tmp_path
+
+
+def install(home, profile, ram, boot=None, settings=None, monkeypatch=None):
+    """presets.json from `profile`, as the first start makes it, on a machine with `ram` GiB."""
+    monkeypatch.setattr(P, "facts", lambda: machine(ram))
+    P.apply(profile)
+    if settings:
+        c = P.current()
+        c["settings"] = settings
+        P.PRESETS_FILE.write_text(json.dumps(c))
+    if boot:
+        (home / "state" / "default_preset").write_text(boot + "\n")
+
+
+def make_pack(home, pack):
+    q = pack.upper()
+    d = home / "models" / q
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"Qwen3.8-Flash-Next-GSQ-RCO-{q}-00001-of-00002.gguf").write_bytes(b"x" * 10)
+    (d / f"Qwen3.8-Flash-Next-GSQ-RCO-{q}-00001-of-00002.gguf.ok").write_text("ok")
+    (home / "models" / f"{q}-q8dense").mkdir(exist_ok=True)
+    p = home / "data" / "packs" / pack
+    p.mkdir(parents=True, exist_ok=True)
+    (p / "native_experts.txt").write_text("1")
+
+
+def test_the_profile_that_fits_against_the_one_installed(home, monkeypatch):
+    install(home, "m6000-32g", 31, monkeypatch=monkeypatch)
+    assert P.hardware(None, machine(31))["change"] == "none"
+    assert P.hardware(None, machine(47))["change"] == "none"          # 48 GB of sticks: still the 32 GB profile
+    up = P.hardware(None, machine(63))
+    assert (up["change"], up["fits"]) == ("more", "m6000-64g")
+    assert up["new_packs"] == ["q2_0", "iq3_xxs", "iq3_s"] and up["download_gb"] > 0     # nothing on disk here
+    assert "63 GiB" in up["message"] and "until you apply it" in up["message"]
+    make_pack(home, "q2_0")
+    make_pack(home, "iq3_xxs")
+    up = P.hardware(None, machine(63))
+    assert up["new_packs"] == ["iq3_s"] and up["download_gb"] == P.PACK_GB["iq3_s"]
+    # a GB10 under an M6000 profile: another GPU, offered, never moved by itself
+    assert P.hardware(None, machine(121, GB10, "aarch64"))["change"] == "other"
+    assert P.hardware(None, machine(121, GB10, "aarch64"))["fits"] == "gb10-128g"
+
+
+def test_less_ram_moves_to_the_profile_that_fits(home, monkeypatch):
+    install(home, "m6000-128g", 126, boot="quality-1m", settings={"exact_answers": "on"}, monkeypatch=monkeypatch)
+    monkeypatch.setattr(P, "facts", lambda: machine(31))
+    h = P.follow(machine(31))
+    assert h["change"] == "less" and h["moved"]["to"] == "m6000-32g"
+    c = P.current()
+    assert c["profile"]["name"] == "m6000-32g" and set(c["presets"]) == {"speed", "balanced"}
+    assert c["settings"] == {"exact_answers": "on"}                    # the user's choices are kept
+    # the boot preset is gone from the smaller profile: its default instead
+    assert (home / "state" / "default_preset").read_text().strip() == "speed"
+    assert "quality-1m" in h["moved"]["presets_gone"] and "boot preset is now speed" in h["message"]
+    assert P.last_move()["from"] == "m6000-128g"
+    assert list(home.glob("presets.json.*.bak"))                       # the old file is kept
+    # the next start: nothing more to do
+    assert P.follow(machine(31))["change"] == "none"
+
+
+def test_less_ram_keeps_a_boot_preset_the_smaller_profile_has(home, monkeypatch):
+    install(home, "m6000-64g", 63, boot="balanced", monkeypatch=monkeypatch)
+    monkeypatch.setattr(P, "facts", lambda: machine(31))
+    h = P.follow(machine(31))
+    assert h["moved"]["boot"] == "balanced" and "boot preset is now" not in h["message"]
+
+
+def test_more_ram_is_only_offered(home, monkeypatch):
+    install(home, "m6000-32g", 31, monkeypatch=monkeypatch)
+    before = P.PRESETS_FILE.read_text()
+    h = P.follow(machine(126))
+    assert h["change"] == "more" and "moved" not in h and P.PRESETS_FILE.read_text() == before
+    assert P.last_move() is None
+
+
+def test_a_small_disk_keeps_only_the_boot_presets_pack(home, monkeypatch):
+    install(home, "m6000-32g", 31, monkeypatch=monkeypatch)
+    monkeypatch.setattr(P, "disk_free_gb", lambda: 230)               # a 256 GB drive: more than one pack, less than two
+    assert P.wanted_packs(P.current()) == ["q2_0", "iq3_xxs"]
+    msg = P.first_packs(P.current())
+    assert msg and "only the boot preset's pack (q2_0" in msg
+    c = P.current()
+    assert c["settings"]["packs"] == "boot" and P.wanted_packs(c) == ["q2_0"]
+    assert P.first_packs(c) is None                                     # chosen once; the user may change it after
+
+
+def test_a_disk_big_enough_keeps_every_pack(home, monkeypatch):
+    install(home, "m6000-32g", 31, monkeypatch=monkeypatch)
+    monkeypatch.setattr(P, "disk_free_gb", lambda: 900)
+    assert P.first_packs(P.current()) is None
+    assert "packs" not in (P.current().get("settings") or {})
+
+
+def test_the_boot_presets_pack_follows_the_boot_preset(home, monkeypatch):
+    install(home, "m6000-32g", 31, boot="balanced", settings={"packs": "boot"}, monkeypatch=monkeypatch)
+    assert P.wanted_packs(P.current()) == ["iq3_xxs"]
+
+
+def test_packs_no_longer_kept_are_removed_and_never_the_shared_files(home, monkeypatch):
+    install(home, "m6000-32g", 31, boot="speed", monkeypatch=monkeypatch)
+    for p in ("q2_0", "iq3_xxs", "iq3_s"):                            # iq3_s: left from a bigger profile
+        make_pack(home, p)
+    shared = [home / "models" / "ngram", home / "models" / "vision", home / "data" / "mtp"]
+    for d in shared:
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "f").write_text("1")
+    assert P.remove_unwanted(P.current()) == []                        # every pack kept: nothing removed
+    c = P.current()
+    c["settings"] = {"packs": "boot"}
+    P.PRESETS_FILE.write_text(json.dumps(c))
+    assert P.remove_unwanted(P.current()) == ["iq3_s", "iq3_xxs"]
+    assert P.pack_ready("q2_0") and not P.pack_ready("iq3_xxs")
+    assert not (home / "models" / "IQ3_XXS-q8dense").exists() and not (home / "data" / "packs" / "iq3_xxs").exists()
+    assert all((d / "f").exists() for d in shared)
+    # the running preset's pack stays, whatever the boot preset is
+    make_pack(home, "iq3_xxs")
+    assert P.remove_unwanted(P.current(), running="balanced") == []
+
+
+def test_a_preset_whose_pack_is_absent_is_refused(home, monkeypatch):
+    install(home, "m6000-32g", 31, monkeypatch=monkeypatch)
+    c = P.current()
+    assert P.not_downloaded(c, "balanced") is None                     # no packs at all: a fake engine, or the tests
+    make_pack(home, "q2_0")
+    assert P.not_downloaded(c, "speed") is None
+    assert "iq3_xxs pack, which is not downloaded yet" in P.not_downloaded(c, "balanced")
+    c["settings"] = {"packs": "boot"}
+    assert "make balanced the boot preset" in P.not_downloaded(c, "balanced")
+
+
+def test_the_switch_refuses_a_preset_without_its_pack(home, monkeypatch):
+    install(home, "m6000-32g", 31, monkeypatch=monkeypatch)
+    make_pack(home, "q2_0")
+    monkeypatch.setattr(LC.SP, "load", lambda: P.current())
+    with pytest.raises(LC.SwitchError, match="iq3_xxs pack"):
+        LC._switch("balanced")
+
+
+# ------------------------------------------------------------------------------------- docker/profile.py (StartOS)
+
+def run_profile_py(home, *args, ram=63):
+    """docker/profile.py on a machine of `ram` GiB: nvidia-smi and /proc/meminfo are replaced through lib/profiles.py's
+    own inputs (a sitecustomize that patches facts())."""
+    shim = home / "shim"
+    shim.mkdir(exist_ok=True)
+    (shim / "sitecustomize.py").write_text(
+        "import sys\nsys.path.insert(0, %r)\nimport profiles\n"
+        "profiles.facts = lambda: %r\n" % (str(ROOT / "lib"), machine(ram)))
+    e = {k: v for k, v in os.environ.items() if not k.startswith("OUTCROP_")}
+    e.update(OUTCROP_HOME=str(home), OUTCROP_PROFILES=str(ROOT / "profiles"), PYTHONPATH=str(shim),
+             PYTHONDONTWRITEBYTECODE="1")          # the shim changes between runs within one second
+    r = subprocess.run([sys.executable, str(ROOT / "docker" / "profile.py"), *args], env=e, capture_output=True, text=True)
+    return r
+
+
+def test_startos_first_start_then_less_ram(tmp_path):
+    r = run_profile_py(tmp_path, "follow", ram=126)
+    out = json.loads(r.stdout)
+    assert out["first"] is True and out.get("error") is None
+    assert json.loads((tmp_path / "presets.json").read_text())["profile"]["name"] == "m6000-128g"
+    out = json.loads(run_profile_py(tmp_path, "follow", ram=31).stdout)
+    assert out["first"] is False and out["hardware"]["moved"]["to"] == "m6000-32g"
+    assert json.loads((tmp_path / "presets.json").read_text())["profile"]["name"] == "m6000-32g"
+
+
+def test_startos_the_action_takes_the_bigger_profile(tmp_path):
+    run_profile_py(tmp_path, "follow", ram=31)
+    out = json.loads(run_profile_py(tmp_path, "check", ram=63).stdout)
+    assert (out["profile"], out["target"], out["changes"]) == ("m6000-32g", "m6000-64g", True)
+    assert out["hardware"]["change"] == "more"
+    out = json.loads(run_profile_py(tmp_path, "apply", ram=63).stdout)
+    assert out["moved"]["to"] == "m6000-64g"
+    assert json.loads((tmp_path / "presets.json").read_text())["profile"]["name"] == "m6000-64g"
+    out = json.loads(run_profile_py(tmp_path, "check", ram=63).stdout)
+    assert (out["target"], out["changes"]) == ("m6000-64g", False)
+
+
+def test_startos_follow_never_fails_the_start(tmp_path):
+    (tmp_path / "presets.json").write_text(json.dumps({"profile": {"name": "no-such-profile"}, "presets": {}}))
+    r = run_profile_py(tmp_path, "follow", ram=31)
+    assert r.returncode == 0 and json.loads(r.stdout)["hardware"]["change"] in ("unknown", "more", "less", "other", "none")

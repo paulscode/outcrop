@@ -187,6 +187,17 @@ SETTINGS = {
                  "The memory for it is set aside in advance, so a shorter limit leaves more RAM for the model itself, which makes a machine with little RAM faster: with 32 GB, 131,072 tokens made the "
                  "balanced preset 3 to 5% faster. The presets for a million tokens keep their own length.",
     },
+    "packs": {
+        "title": "Models to keep",
+        "values": {"all": "Every pack the hardware profile offers (recommended)",
+                   "boot": "Only the boot preset's: less disk, one preset at a time"},
+        "default": "all",
+        "about": "Each preset runs a model pack of 80 to 110 GB. Keeping every pack the hardware profile offers lets you "
+                 "switch between its presets in a minute or two. Keeping only the boot preset's pack fits a smaller disk "
+                 "(about 120 GB for the speed preset): only that preset runs, and choosing another boot preset downloads "
+                 "its pack at the next start and deletes the old one. Outcrop chooses this by itself when the disk is "
+                 "too small for every pack.",
+    },
 }
 
 

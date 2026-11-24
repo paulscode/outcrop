@@ -21,6 +21,7 @@ from pathlib import Path
 
 PROJECT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT / "lib"))
+import profiles as PF  # noqa: E402
 import strata_presets as SP  # noqa: E402
 import units  # noqa: E402
 
@@ -432,6 +433,9 @@ def _switch(name: str, *, cancel_inflight: bool = False, by: str = "cli", source
     cfg = SP.load()
     if name not in cfg["presets"]:
         raise SwitchError(f"unknown preset {name!r}; presets: {', '.join(cfg['presets'])}")
+    missing = PF.not_downloaded(cfg, name)
+    if missing:
+        raise SwitchError(missing)
     t0 = time.time()
     rec = {"started_at": t0, "from": current(), "to": name, "by": by, "phases": [], "ok": False, "error": None}
     phases = rec["phases"]
