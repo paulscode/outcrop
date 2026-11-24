@@ -12,16 +12,17 @@
 # Needs: ssh to the server as start9 with sudo (HOST=YOUR-SERVER.local, required), a token in $OUTCROP_TOKEN_FILE (default
 # ~/.config/outcrop-test/token).  BASE=PRESET starts from that preset's settings (the GB10's prefill and draft
 # options) instead of a bare one, CONTEXT sets the context (default 262144), and ARGS
-# adds engine options ("--ple-io ram").  Writes bench/results/startos-<host>-<NAME>-<date>.json.
+# adds engine options ("--ple-io ram").  PACK "shipped" measures the service's own preset NAME as it is (step 1 skipped).
+# TAG (32g, say) goes in the file name.  Writes bench/results/startos-<host>-[<TAG>-]<NAME>-<date>.json.
 set -euo pipefail
 NAME=${1:?usage: startos-variant.sh NAME PACK [BUDGET_GIB|auto] [CONV_CACHE_MIB|default]}
-PACK=${2:?pack: q2_0, iq3_xxs or iq3_s}
+PACK=${2:?pack: q2_0, iq3_xxs, iq3_s, or shipped}
 BUDGET=${3:-auto}
 CONV=${4:-default}
 HOST=${HOST:?name the server: HOST=YOUR-SERVER.local}
 TOKEN_FILE=${OUTCROP_TOKEN_FILE:-$HOME/.config/outcrop-test/token}
 HERE=$(cd "$(dirname "$0")" && pwd)
-OUT=$HERE/results/startos-${HOST%%.*}-$NAME-$(date -u +%Y%m%d-%H%M).json
+OUT=$HERE/results/startos-${HOST%%.*}-${TAG:+$TAG-}$NAME-$(date -u +%Y%m%d-%H%M).json
 ATTACH="sudo -n start-cli package attach outcrop --name outcrop --user outcrop --"
 
 counters() {  # the host's view, as JSON
@@ -50,7 +51,7 @@ PY'
 }
 
 echo "== $NAME: $PACK, budget $BUDGET, conversation cache $CONV, on $HOST"
-ssh -o BatchMode=yes "start9@$HOST" "$ATTACH python3 - '$NAME' '$PACK' '$BUDGET' '$CONV' '${BASE:-}' '${CONTEXT:-262144}' '${ARGS:-}'" <<'PY'
+[ "$PACK" = shipped ] || ssh -o BatchMode=yes "start9@$HOST" "$ATTACH python3 - '$NAME' '$PACK' '$BUDGET' '$CONV' '${BASE:-}' '${CONTEXT:-262144}' '${ARGS:-}'" <<'PY'
 import json, os, sys
 name, pack, budget, conv, base, context, extra = sys.argv[1:8]
 path = os.environ.get("OUTCROP_HOME", "/data") + "/presets.json"
