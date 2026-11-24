@@ -29,6 +29,7 @@ def home(tmp_path, monkeypatch):
     monkeypatch.setattr(P, "PRESETS_FILE", tmp_path / "presets.json")
     monkeypatch.setattr(P, "STATE", tmp_path / "state")
     monkeypatch.setattr(P, "HARDWARE_FILE", tmp_path / "state" / "hardware.json")
+    monkeypatch.setattr(P, "PACKS_NOTICE", tmp_path / "state" / "packs-notice.txt")
     (tmp_path / "state").mkdir()
     return tmp_path
 
@@ -115,6 +116,7 @@ def test_a_small_disk_keeps_only_the_boot_presets_pack(home, monkeypatch):
     c = P.current()
     assert c["settings"]["packs"] == "boot" and P.wanted_packs(c) == ["q2_0"]
     assert P.first_packs(c) is None                                     # chosen once; the user may change it after
+    assert P.take_packs_notice() == msg and P.take_packs_notice() is None   # told once
 
 
 def test_a_disk_big_enough_keeps_every_pack(home, monkeypatch):
@@ -212,3 +214,13 @@ def test_startos_follow_never_fails_the_start(tmp_path):
     (tmp_path / "presets.json").write_text(json.dumps({"profile": {"name": "no-such-profile"}, "presets": {}}))
     r = run_profile_py(tmp_path, "follow", ram=31)
     assert r.returncode == 0 and json.loads(r.stdout)["hardware"]["change"] in ("unknown", "more", "less", "other", "none")
+
+
+def test_startos_a_presets_file_made_before_the_start_still_tells_its_pack_choice(tmp_path):
+    """The install's password step runs prepare.sh, which makes presets.json (and the one-pack choice) before the
+    service's first start: the start passes the message on, once."""
+    run_profile_py(tmp_path, "follow", ram=31)                          # stands in for prepare.sh making the file
+    (tmp_path / "state" / "packs-notice.txt").write_text("only the boot preset's pack\n")
+    out = json.loads(run_profile_py(tmp_path, "follow", ram=31).stdout)
+    assert out["first"] is False and out["packs_message"] == "only the boot preset's pack"
+    assert json.loads(run_profile_py(tmp_path, "follow", ram=31).stdout)["packs_message"] is None

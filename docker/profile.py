@@ -12,7 +12,8 @@ console's Settings page), and keeps a copy of the old file next to it.
   apply   the same, after writing presets.json from target when there are changes
   follow  run before Outcrop starts, as root (prepare.sh hands the files to the service user next): the first time,
           presets.json from the profile that fits, and only the boot preset's pack when the disk is too small for every
-          pack; after that, the move to a smaller profile when the RAM went down (lib/profiles.py follow()).  Prints
+          pack (prepare.sh makes the same choice when it makes presets.json; its message waits in the state folder for
+          this to pass on); after that, the move to a smaller profile when the RAM went down (lib/profiles.py follow()).  Prints
           {"first": bool, "packs_message": "...", "hardware": {...}} for main.ts's task and notifications.  Never fails
           the start: an error is printed as {"error": "..."}
 Exits 1 with the reason on stderr, one line, when check or apply cannot be done (no presets.json, an unknown profile)."""
@@ -34,9 +35,12 @@ if cmd == "follow":
             if name:                        # else prepare.sh says why no profile fits, and the engine does not start
                 PF.apply(name)
                 out["first"] = True
-                out["packs_message"] = PF.first_packs(PF.current() or {})
+                PF.first_packs(PF.current() or {})
         else:
             out["hardware"] = PF.follow(f)
+        # the choice of one pack at the first start: made here, or by prepare.sh when another step ran it first (the
+        # install's password step does)
+        out["packs_message"] = PF.take_packs_notice()
     except Exception as e:                  # noqa: BLE001  (the start goes on; the error is shown in the log)
         out["error"] = f"{type(e).__name__}: {e}"
     print(json.dumps(out))

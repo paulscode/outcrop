@@ -258,6 +258,7 @@ def apply(name: str) -> tuple[Path, Path | None]:
 # its prepared pack (data/packs/q2_0).  The n-gram table, the picture encoder and the MTP draft layer are shared by all.
 STATE = Path(os.environ.get("OUTCROP_STATE") or OUTCROP_HOME / "state")     # as strata_presets and the console
 HARDWARE_FILE = STATE / "hardware.json"
+PACKS_NOTICE = STATE / "packs-notice.txt"         # first_packs()'s message, until StartOS's start has told it
 
 
 def pack_paths(pack: str) -> list[Path]:
@@ -459,9 +460,23 @@ def first_packs(cfg: dict) -> str | None:
         fh.truncate()
         fh.write(json.dumps(cfg, indent=2) + "\n")
     tail = "" if free >= one else f" Even that needs about {one} GB: free some space, or use a bigger disk."
-    return (f"The disk has about {free} GB free; every model pack of profile {cfg['profile']['name']} needs about {need}. "
-            f"Outcrop keeps only the boot preset's pack ({pack}, about {one} GB with what every install needs), so only "
-            f"{b} runs. To run another preset, make it the boot preset: its pack replaces this one.{tail}")
+    msg = (f"The disk has about {free} GB free; every model pack of profile {cfg['profile']['name']} needs about {need}. "
+           f"Outcrop keeps only the boot preset's pack ({pack}, about {one} GB with what every install needs), so only "
+           f"{b} runs. To run another preset, make it the boot preset: its pack replaces this one.{tail}")
+    STATE.mkdir(parents=True, exist_ok=True)
+    PACKS_NOTICE.write_text(msg + "\n", encoding="utf-8")
+    return msg
+
+
+def take_packs_notice() -> str | None:
+    """first_packs()'s message, once: StartOS's start shows it in a notification (presets.json is often made before,
+    by the install's password step, which runs docker/prepare.sh)."""
+    try:
+        msg = PACKS_NOTICE.read_text(encoding="utf-8").strip()
+        PACKS_NOTICE.unlink()
+        return msg or None
+    except OSError:
+        return None
 
 
 def remove_unwanted(cfg: dict, running: str | None = None) -> list[str]:

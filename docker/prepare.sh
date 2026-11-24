@@ -39,6 +39,10 @@ print(n or "") if n else print("\n".join(["", *why[:6]]))')
   if [ -n "$name" ]; then
     as python3 "$P/bin/outcrop" profile apply "$name" --yes > /dev/null
     echo "presets.json from profile $name"
+    # a disk too small for every pack: only the boot preset's (lib/profiles.py; startos/hardware.ts tells it)
+    as env PYTHONPATH="$P/lib" python3 -c 'import profiles as P
+m = P.first_packs(P.current() or {})
+print(m) if m else None'
   else
     echo "no hardware profile fits this server, so the engine will not start:" >&2
     printf '%s\n' "$pick" | tail -n +2 | sed 's/^/  - /' >&2
