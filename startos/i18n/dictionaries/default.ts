@@ -33,7 +33,12 @@ const dict = {
   'As the hardware profile sets it (recommended)': 27,
   '131,072 tokens (about 100,000 words)': 28,
   '262,144 tokens (about 200,000 words)': 29,
-  'The console password, whether answers are computed in full, and how long a conversation can be': 30,
+  'The console password, whether answers are computed in full, how long a conversation can be, and which models to keep': 30,
+  'Models to keep': 47,
+  'Each preset runs a model pack of 80 to 110 GB. Keeping every pack the hardware profile offers lets you switch between its presets in a minute or two. Keeping only the boot preset’s pack fits a smaller disk (about 120 GB for the speed preset): only that preset runs, and choosing another boot preset downloads its pack at the next start and deletes the old one. Outcrop chooses this by itself when the disk is too small for every pack.': 48,
+  'Keep every pack unless the disk is small. A change takes effect when Outcrop starts next: it restarts now.': 49,
+  'Every pack the hardware profile offers (recommended)': 50,
+  'Only the boot preset’s: less disk, one preset at a time': 51,
   // actions/check.ts
   'Check answers and speed': 31,
   'Asks the model six questions with known answers, then times two short pieces of writing. Takes about a minute; for seeing what a change under Configure did.': 32,
@@ -44,13 +49,20 @@ const dict = {
   'answers (the engine may still be settling after a start): try again in a minute.': 45,
   // actions/profile.ts
   'Update hardware settings': 36,
-  'Takes the newest settings for your kind of machine (its hardware profile), which an update of Outcrop may have improved. Your choices under Configure, the boot preset and the network settings are kept.': 37,
-  'If there is anything new, Outcrop restarts to use it (a few minutes). Changes made to the presets in the web console’s editor are replaced by the profile’s; a copy of the old file is kept.': 38,
+  'Takes the settings for your kind of machine (its hardware profile): the newest ones, which an update of Outcrop may have improved, or after you added RAM or changed the GPU, those of the profile that fits it now. Your choices under Configure, the boot preset and the network settings are kept.': 37,
+  'If there is anything new, Outcrop restarts to use it (a few minutes, or longer when a bigger profile needs a model pack downloaded). Changes made to the presets in the web console’s editor are replaced by the profile’s; a copy of the old file is kept.': 38,
   'Already up to date: nothing new in the hardware profile': 39,
   'Updated to the newest settings of the hardware profile': 40,
   'Outcrop is restarting to use them.': 41,
   'Outcrop uses them when it starts.': 42,
   'What changed is below.': 43,
+  'Changed the hardware profile from': 52,
+  to: 53,
+  'It downloads': 54,
+  'when Outcrop starts; the Models health check shows the progress.': 55,
+  // hardware.ts
+  'Outcrop keeps only one model pack': 56,
+  'Outcrop moved to a smaller hardware profile': 57,
   // utils.ts
   'This check has not finished after one minute': 46,
 } as const

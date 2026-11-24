@@ -7,6 +7,7 @@ import { mounts } from './utils'
 export type Settings = {
   exact_answers: 'off' | 'on'
   context: 'profile' | '131072' | '262144'
+  packs: 'all' | 'boot'
 }
 
 const PY = '/opt/outcrop/venv/bin/python'

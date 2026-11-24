@@ -1,3 +1,4 @@
+import { followHardware } from './hardware'
 import { i18n } from './i18n'
 import { sdk } from './sdk'
 import { bounded, mounts, unanswered } from './utils'
@@ -25,6 +26,9 @@ export const main = sdk.setupMain(async ({ effects }) => {
     mounts(sdk),
     'outcrop',
   )
+
+  // before anything starts: the hardware profile that fits, and what changed (a task, or a notification)
+  await followHardware(effects, sub)
 
   // a check's answer comes from docker/health.py, which reads the supervisor and the services themselves
   const check =

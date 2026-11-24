@@ -7,6 +7,9 @@ export const ollamaPort = 11434 //    Ollama API, raw TCP
 export const apiTlsPort = 8443 //     the same API behind StartOS's HTTPS proxy
 export const consolePort = 8800 //    the web console behind StartOS's HTTPS proxy
 
+// the task startos/hardware.ts creates when a bigger hardware profile fits; the Update hardware settings action clears it
+export const HARDWARE_TASK = 'hardware-profile'
+
 export const mounts = (sdk: typeof import('./sdk').sdk) =>
   sdk.Mounts.of()
     .mountVolume({

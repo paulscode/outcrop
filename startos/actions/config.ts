@@ -48,6 +48,20 @@ export const inputSpec = InputSpec.of({
       '262144': i18n('262,144 tokens (about 200,000 words)'),
     },
   }),
+  packs: Value.select({
+    name: i18n('Models to keep'),
+    description: i18n(
+      'Each preset runs a model pack of 80 to 110 GB. Keeping every pack the hardware profile offers lets you switch between its presets in a minute or two. Keeping only the boot preset’s pack fits a smaller disk (about 120 GB for the speed preset): only that preset runs, and choosing another boot preset downloads its pack at the next start and deletes the old one. Outcrop chooses this by itself when the disk is too small for every pack.',
+    ),
+    footnote: i18n(
+      'Keep every pack unless the disk is small. A change takes effect when Outcrop starts next: it restarts now.',
+    ),
+    default: 'all',
+    values: {
+      all: i18n('Every pack the hardware profile offers (recommended)'),
+      boot: i18n('Only the boot preset’s: less disk, one preset at a time'),
+    },
+  }),
 })
 
 export const config = sdk.Action.withInput(
@@ -56,7 +70,7 @@ export const config = sdk.Action.withInput(
   async ({ effects }) => ({
     name: i18n('Configure'),
     description: i18n(
-      'The console password, whether answers are computed in full, and how long a conversation can be',
+      'The console password, whether answers are computed in full, how long a conversation can be, and which models to keep',
     ),
     warning: null,
     allowedStatuses: 'any',
@@ -75,6 +89,7 @@ export const config = sdk.Action.withInput(
         (await storeJson.read((x) => x.consolePassword).once()) ?? undefined,
       exactAnswers: s.exact_answers,
       context: s.context,
+      packs: s.packs,
     }
   },
 
@@ -88,6 +103,7 @@ export const config = sdk.Action.withInput(
     const want: Settings = {
       exact_answers: input.exactAnswers,
       context: input.context,
+      packs: input.packs,
     }
     const changed = await applySettings(effects, want)
     // the engine reads them when a preset starts: a running Outcrop restarts to use them now
