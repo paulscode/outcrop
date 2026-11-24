@@ -343,3 +343,29 @@ that off. Paired over the same 40 GSM8K answers:
 The skip changes the wording from where its first differing token falls, more often than not, but not how many answers
 are right; for IQ3_S its KL divergence from the exact model is 0.055 against 0.015 between two exact runs. Off stays the
 default.
+
+## One server from 32 to 128 GB of RAM, on StartOS (2026-11-24)
+
+A Dell Precision T5810 (Xeon E5-2699 v3, four memory channels, DDR4-2133, 16 GB sticks), a Quadro M6000 and a SATA SSD,
+under StartOS 0.4.2.1 with Outcrop 0.1.0.1: the shipped presets, `bench/quickbench.py` (3 runs, the median), decode in
+tokens a second as the average of the chat, code, story and 4K-document cases. StartOS gives its services about 90% of
+the RAM less 1 GiB, which is the RAM the engine counts on.
+
+| RAM (sticks) | Profile | `speed` | `balanced` | `quality` | Read from the disk during a bench |
+|---|---|---|---|---|---|
+| 32 GB (2) | m6000-32g | 40.0 | 28.8 (16 GiB of experts in RAM) | not offered | 9 GiB (`speed`), 45 GiB (`balanced`) |
+| 48 GB (3) | m6000-32g | 40.9 | 36.0 (30 GiB in RAM) | not offered | under 0.5 GiB |
+| 64 GB (4) | m6000-64g | 42.0 | 37.9 (every expert) | 35.3 (44 of 57 GiB in RAM) | under 0.5 GiB |
+| 96 GB (6) | m6000-64g | 41.5 | 37.9 | 36.4 (every expert) | none |
+| 128 GB (8) | m6000-128g | 41.8 | 37.9 | 37.6; `quality-1m` the same at short prompts | none |
+
+- **The third stick is the one that pays:** with 48 GB, `balanced` is about 25% faster than with 32 and within 10% of
+  `speed`, because almost every expert it uses stays in RAM even in the low-RAM mode. The 32 GB profile still fits a
+  48 GB machine (47 GiB as the system reports it).
+- **64 GB adds `quality`.** Under StartOS's line (55.5 GiB) it keeps 44 of its 57 GiB of experts in RAM, 2 to 5% slower
+  than with every expert there.
+- **Past 64 GB no preset is faster**; switches are shorter (`quality` 169 s at 64 GB, 127 s at 128), and 128 GB adds
+  the million-token presets (`quality-1m` read a 47,559-token document at 198 tokens a second and answered at 37.7).
+- **Uneven channels cost nothing measurable:** three and six sticks (one channel with one more than another) ran as fast
+  as four and eight, so a machine can grow one stick at a time.
+- About 3 to 9% under the profiles' figures from the reference system, a newer CPU, at the same RAM.

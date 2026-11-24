@@ -76,7 +76,7 @@ outcrop connect           # how to point apps at the server
 outcrop logs [-f]         # the service journal and the engine log
 outcrop test              # a quick answer check;  outcrop bench: a quick speed check
 outcrop profile           # this machine and its hardware profile
-outcrop setting           # exact answers, the longest conversation: what each trades, and changing them
+outcrop setting           # exact answers, the longest conversation, the models to keep: what each trades
 ```
 
 `outcrop --help` lists the rest. (`llmctl`, the old name, still works.)

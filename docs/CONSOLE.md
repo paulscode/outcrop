@@ -38,7 +38,7 @@ Once every device you use has the CA, turn on HSTS in Settings (it makes browser
 | System | The security posture with a fix for anything that fails, the GPU's other users and its temperature, history charts from 15 minutes to 30 days, energy by day, hardware, software, services and ports |
 | Logs | The journal of every LLM service and the engine's log, live, with search and pause |
 | Timeline | Everything that happened (switches, sign-ins, token changes, the API opened or closed, alerts, benchmarks): the audit log |
-| Settings | Answers and memory (exact answers, the longest conversation: see "Settings for every preset" below), chat (internet access for the chat and apps, web on for new chats, ask before opening pages, suggested spaces, tool limits, export), password and sessions, alerts and Telegram (with commands), capture mode, energy price, backups, the CA certificate and HSTS |
+| Settings | Answers and memory (exact answers, the longest conversation, the models to keep: see "Settings for every preset" below), chat (internet access for the chat and apps, web on for new chats, ask before opening pages, suggested spaces, tool limits, export), password and sessions, alerts and Telegram (with commands), capture mode, energy price, backups, the CA certificate and HSTS |
 
 Press Ctrl+K (⌘K on a Mac) anywhere for the command palette: "switch to speed", "open the API for 15 min", "new token
 for n8n", "copy the Anthropic base URL".
@@ -137,12 +137,13 @@ unless capture names the console's token: deleting a chat must remove its text.
 
 ## Settings for every preset
 
-Two choices apply to every preset, each explained where it is chosen, with the recommended one as the default:
+Three choices apply to every preset, each explained where it is chosen, with the recommended one as the default:
 
 | Setting | Choices | What it trades |
 | --- | --- | --- |
 | Exact answers (`exact_answers`) | off (the default), on | Off, the engine leaves out a word's smallest contributions (its route tail skip: experts past the seventh) when they would come from RAM or the disk. On computes every word in full: 3 to 6% slower with 32 GB of RAM, about 1% with every expert in RAM ([FINDINGS.md](FINDINGS.md)) |
 | Longest conversation (`context`) | profile (the default), 131072, 262144 | Every preset's context limit, except the 1M presets'. The memory for it is set aside in advance, so a shorter one leaves more RAM for the experts |
+| Models to keep (`packs`) | all (the default), boot | Every pack the hardware profile offers, or only the boot preset's: about 120 GB instead of 230 GB and up, with one preset at a time ([PROFILES.md](PROFILES.md)). It takes effect when the models are next downloaded: `./setup.sh`, or the next start on StartOS |
 
 They are in presets.json's `settings` section, which applying a hardware profile keeps, and the same on the Settings page,
 on the command line (`outcrop setting`, `outcrop setting exact_answers on`) and under Configure on StartOS. A running

@@ -52,6 +52,24 @@ What changes with RAM, and why:
 - **The 1M-token presets.** Beyond 262K tokens of context, the attention cache past what stays in VRAM is pinned in RAM:
   about 12 GiB at a million tokens, on top of the experts. Only the 128g and 256g profiles offer them.
 
+## When the hardware changes
+
+presets.json keeps the profile it was made from until one is applied again, so adding RAM changes nothing by itself.
+`outcrop profile` shows the profile that fits now beside the one presets.json came from, and the console raises an
+alert (the **hardware** rule, on Telegram too) when they differ: with more RAM or another GPU it names the profile to
+apply (`outcrop profile apply NAME`, then `./setup.sh` downloads any pack it adds); with less RAM it says so as an
+error, since a profile made for more RAM can promise more than fits. On StartOS, the move to a smaller profile is made
+by itself before every start, and the **Update hardware settings** action takes a bigger one ([STARTOS.md](STARTOS.md)).
+[FINDINGS.md](FINDINGS.md) has what each RAM size gave on one server.
+
+## Keeping one model pack
+
+The setting **Models to keep** (`outcrop setting packs boot`, the console's Settings page, Configure on StartOS) keeps
+only the boot preset's pack instead of every pack the profile offers: about 120 GB for `speed`'s instead of 230 GB for
+the 32 GB profile's two. Only that preset runs (`outcrop list` marks the others, and a switch to them is refused);
+choosing another boot preset and running `./setup.sh` (or restarting Outcrop on StartOS) removes the old pack and
+downloads the new one. The install chooses it by itself when the disk is too small for every pack, with 10% to spare.
+
 ## What a profile file holds
 
 A profile is a JSON file in [profiles/](../profiles/): a presets.json template, plus a `"profile"` block about the

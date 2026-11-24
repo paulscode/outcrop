@@ -15,7 +15,7 @@ Either of two kinds of machine:
 | Driver | [startos-nvidia-legacy](https://github.com/paulscode/startos-nvidia-legacy): StartOS's own NVIDIA edition supports only newer cards | comes with StartOS |
 | CPU | x86-64 with AVX2 (Intel Haswell, AMD Zen and newer) | the GB10's own |
 | RAM | 32 GB or more (see "Memory" below) | the 128 GB it has |
-| Disk | about 120 GB (32 GB of RAM) to 180 GB (64 GB and more) free for the service | about 100 GB free |
+| Disk | about 230 GB (32 GB of RAM) to 340 GB (64 GB and more) free for the service; about 120 GB keeping one model pack ("Models to keep" below) | about 100 GB free |
 | Presets | speed, balanced and quality, by RAM | quality (IQ3_S) only, with a 262K context |
 
 StartOS offers Outcrop only to servers with such a GPU, CPU and RAM, and each architecture gets its own package. A
@@ -29,7 +29,8 @@ sideloaded package installs anywhere, but its engine starts only on hardware a [
 2. Start the service. The first start downloads the model files for your hardware profile, checks them, and prepares
    them: about 110 GB with 32 GB of RAM or 85 GB on a GB10, from about 20 minutes to several hours depending on your
    internet. The
-   **Models** health check shows the file it is on. An interrupted download resumes where it stopped.
+   **Models** health check shows the file it is on. An interrupted download resumes where it stopped. When the disk is
+   too small for every model pack of the profile, Outcrop keeps only the boot preset's, and a notification says so.
 3. While it downloads, open the **Web console**, sign in with that password, and make a token for each app
    on the **Connect** page. When the models are ready the engine starts by itself; the **Engine** health check says
    when it answers.
@@ -69,6 +70,35 @@ sees each app's own address, so a token can be limited to the address of the dev
   downloaded again on the next start.
 - **The command line**: `outcrop` works inside the service, for example from the server over SSH:
   `sudo start-cli package attach outcrop --name outcrop --user outcrop -- outcrop status`.
+
+## Models to keep
+
+Each preset runs a model pack: with its prepared files, about 77 GB for `speed`'s, 94 GB for `balanced`'s and 109 GB for
+`quality`'s, beside 35 GB that every pack shares. **Configure** has **Models to keep**:
+
+- **Every pack the hardware profile offers** (the default): switching between presets takes a minute or two.
+- **Only the boot preset's**, for a small disk (about 120 GB with `speed`): only that preset runs, and the console
+  refuses a switch to another, saying why. To change preset, make another one the boot preset (the console's Presets
+  page or `outcrop default NAME`) and restart Outcrop: the start removes the old pack, then downloads the new one.
+
+Outcrop chooses the second at the first start when the disk is too small for every pack, with 10% to spare.
+
+## When the RAM or the GPU changes
+
+The presets come from the [hardware profile](PROFILES.md) that fitted the server at the first start, and stay until a
+profile is applied again. Before every start, Outcrop compares it with the profile that fits now:
+
+- **Less RAM** (a stick removed or failed): Outcrop moves to the profile that fits before any preset starts, since a
+  profile made for more RAM can promise more than fits (a bigger conversation cache, the million-token presets). It
+  needs no download. Your settings are kept; a boot preset the smaller profile does not have becomes its default. A
+  notification and an alert in the console say what changed.
+- **More RAM, or another GPU**: a task on Outcrop's page offers the profile that fits, and the console shows an alert
+  (on Telegram too, if you use it). **Update hardware settings** takes it: what it downloads, if anything (the 64 GB
+  profile adds the `quality` pack, about 110 GB), comes at the next start, which the action does for you.
+
+Measured on one server with 32 to 128 GB ([FINDINGS.md](FINDINGS.md)): going from 32 to 48 GB made `balanced` about
+25% faster, since its experts then stay in RAM; 64 GB adds `quality`; more than that makes no preset faster, but
+shortens switches and adds the million-token presets at 128 GB.
 
 ## Updating
 
