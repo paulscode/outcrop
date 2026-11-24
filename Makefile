@@ -94,11 +94,11 @@ MANIFEST_CHECK := .id == "$(PKG_ID)" and .osVersion == "0.4.2.1" and .hardwareAc
 verify-040:
 	@for f in $(BUILD_DIR)/*.s9pk; do \
 	  m=$$($(START_CLI) s9pk inspect $$f manifest) || exit 1; \
-	  echo "$$m" | jq -e --arg v "$(PKG_VERSION)" '$(MANIFEST_CHECK)' > /dev/null || { echo "$$f: manifest check failed"; exit 1; }; \
-	  echo "$$m" | jq -e '.gitHash | test("-modified$$") | not' > /dev/null || echo "$$f: WARNING: built from a modified tree"; \
+	  printf '%s\n' "$$m" | jq -e --arg v "$(PKG_VERSION)" '$(MANIFEST_CHECK)' > /dev/null || { echo "$$f: manifest check failed"; exit 1; }; \
+	  printf '%s\n' "$$m" | jq -e '.gitHash | test("-modified$$") | not' > /dev/null || echo "$$f: WARNING: built from a modified tree"; \
 	  python3 -c 'import base64, sys; k = base64.b64decode(sys.argv[2])[-32:]; sys.exit(0 if k in open(sys.argv[1], "rb").read(4096) else 1)' \
 	    $$f "$(TRUSTED_KEY)" || { echo "$$f: not signed with the trusted key"; exit 1; }; \
-	  echo "$$f: $$(echo "$$m" | jq -r '"\(.version), \(.images.main.arch | join(",")), osVersion \(.osVersion)"'), signed with the trusted key"; \
+	  echo "$$f: $$(printf '%s\n' "$$m" | jq -r '"\(.version), \(.images.main.arch | join(",")), osVersion \(.osVersion)"'), signed with the trusted key"; \
 	done
 
 # Outcrop's builder, made once (qemu's binfmt handlers must be registered for arm64)
