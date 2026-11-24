@@ -1,4 +1,4 @@
-import { VersionInfo } from '@start9labs/start-sdk'
+import { IMPOSSIBLE, VersionInfo } from '@start9labs/start-sdk'
 
 export const v_0_1_0_1 = VersionInfo.of({
   version: '0.1.0:1',
@@ -20,6 +20,8 @@ export const v_0_1_0_1 = VersionInfo.of({
     // Nothing to migrate here: the health checks change, and docker/prepare.sh turns 0.1.0:0's empty mount folders
     // into the links to the models volume when Outcrop starts.
     up: async ({ effects }) => {},
-    down: async ({ effects }) => {},
+    // 0.1.0:0 mounts the models volume where this version keeps links to it (/data/models, /data/data), so it would
+    // mount onto links to folders it does not have: refused rather than left broken.
+    down: IMPOSSIBLE,
   },
 })
