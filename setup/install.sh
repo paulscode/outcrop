@@ -28,7 +28,26 @@ DEFAULT=$(prof 'p["profile"]["default_preset"]')
 if [ ! -f "$OUTCROP_HOME/presets.json" ]; then
   OUTCROP_HOME=$OUTCROP_HOME python3 "$PROJECT/bin/outcrop" profile apply "$PROFILE" --yes > /dev/null
   echo "== presets.json from profile $PROFILE: $OUTCROP_HOME/presets.json"
+  # a disk too small for every pack of the profile: only the boot preset's (the setting "Models to keep")
+  OUTCROP_HOME=$OUTCROP_HOME PYTHONPATH="$PROJECT/lib" python3 -c 'import profiles as P
+m = P.first_packs(P.current() or {})
+print("== " + m) if m else None'
 fi
+# the packs this machine keeps: the profile's, or only the boot preset's ("Models to keep"), whose others are removed
+# first (never the running preset's)
+PACKS=$(OUTCROP_HOME=$OUTCROP_HOME PYTHONPATH="$PROJECT/lib" python3 -c 'import profiles as P, sys
+c = P.current() or {}
+if (c.get("profile") or {}).get("name") != sys.argv[1]:
+    print(sys.argv[2])
+    sys.exit()
+try:
+    import outcrop_control as LC
+    running = LC.current()
+except Exception:
+    running = None
+for gone in P.remove_unwanted(c, running):
+    print(f"== removed the {gone} pack (Models to keep: only the boot preset'"'"'s)", file=sys.stderr)
+print(" ".join(P.wanted_packs(c)))' "$PROFILE" "$PACKS")
 
 echo "== 1/8 system packages"
 sudo apt-get update -y
