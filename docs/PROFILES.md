@@ -122,7 +122,7 @@ profile itself.
 | `match.ram_gib` | `[low, high)`: the RAM sizes the profile is for, in GiB as the system reports it |
 | `match.arch` | CPU architectures, as `uname -m` prints them (`aarch64`); any when absent |
 | `match.memory` | `discrete` (the default: the GPU has its own VRAM) or `unified` (one memory for both, as on a GB10) |
-| `match.gpu_count` | How many of those cards the profile runs on (default 1). With two, the profile is preferred over the one-card profile of the same RAM, and its presets run on the first two matching cards (`common.gpu`, set when the profile is applied) |
+| `match.gpu_count` | How many of those cards the profile runs on (default 1). With two, the profile is preferred over the one-card profile of the same RAM, and its presets run on the first two matching cards: `common.gpu` (their numbers) and `common.gpu_uuids` (their UUIDs, which choose the cards at every start, since numbers shift when a card is added), both set when the profile is applied. To run one preset on one card, give it its own `"gpu"` |
 | `packs` | The model packs setup downloads and prepares: `q2_0`, `iq3_xxs`, `iq3_s`, `iq2_xs` |
 | `default_preset` | The preset started at boot |
 | `tested` | When and on what machine it was checked, or `null` |

@@ -371,6 +371,10 @@ def card_numbers(common: dict) -> list[int]:
     uuids, gpus = common.get("gpu_uuids"), common.get("gpu")
     if not uuids:
         return list(gpus or [])
+    if gpus is not None and len(gpus) != len(uuids):
+        raise ValueError(f"common.gpu names {len(gpus)} card(s) and common.gpu_uuids {len(uuids)}: the UUIDs choose the "
+                         "cards (numbers shift); remove gpu_uuids to choose them by number, or give one preset its own "
+                         "\"gpu\"")
     now = gpu_index_by_uuid()
     if not now:                                       # nvidia-smi cannot be run (a test, a fake engine): as written
         return list(gpus or [])
@@ -431,8 +435,10 @@ def unsafe(cfg: dict, name: str) -> list[str]:
     return why
 
 
-def render(name: str, cfg: dict | None = None) -> tuple[Path, list[str]]:
-    """Write $OUTCROP_HOME/cfg/<name>.json for preset `name`; returns its path and notes for the operator."""
+def render(name: str, cfg: dict | None = None, strict: bool = True) -> tuple[Path, list[str]]:
+    """Write $OUTCROP_HOME/cfg/<name>.json for preset `name`; returns its path and notes for the operator.  `strict`
+    as engine_args: a switch's planning step renders while the running engine still holds its RAM, so it is not strict;
+    outcrop-serve renders again when the engine starts, with the RAM free then, and is."""
     cfg = cfg or load()
     if name not in cfg["presets"]:
         raise KeyError(f"unknown preset {name!r}: choose one of {', '.join(cfg['presets'])}")
@@ -441,7 +447,7 @@ def render(name: str, cfg: dict | None = None) -> tuple[Path, list[str]]:
         raise ValueError(f"preset {name!r} refused: " + "; ".join(bad))
     p = with_settings(cfg["presets"][name], settings(cfg))
     server = cfg.get("server", {})
-    args, env, notes = engine_args(p, cfg.get("common", {}))
+    args, env, notes = engine_args(p, cfg.get("common", {}), strict=strict)
     changed = [f"{SETTINGS[k]['title'].lower()}: {v}" for k, v in settings(cfg).items() if v != SETTINGS[k]["default"]]
     if changed:
         notes.append("settings: " + ", ".join(changed))

@@ -101,3 +101,16 @@ def test_the_editor_notes_what_a_start_refuses(monkeypatch):
         pass
     assert SP.gpu_problem(None) is None and SP.gpu_problem([0, 1]) is None
     assert all(SP.gpu_problem(g) for g in ("0,1", [], [0, 0], [0, 9], [True]))
+
+
+def test_a_switch_plans_without_the_strict_ram_check(monkeypatch, tmp_path):
+    """The switch renders the new preset while the old engine still holds its RAM: not strict there."""
+    monkeypatch.setattr(SP, "mem_available_gib", lambda path=None: 8)
+    cfg = {"presets": {"p4": {"pack": "q2_0", "context": 262144, "parallel": 4}}, "common": {}}
+    monkeypatch.setattr(SP, "OUTCROP_HOME", tmp_path)
+    SP.render("p4", cfg, strict=False)
+    try:
+        SP.render("p4", cfg)
+        raise AssertionError("not refused")
+    except ValueError:
+        pass

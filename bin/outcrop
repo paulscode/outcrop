@@ -492,10 +492,16 @@ def cmd_profile(args):
             print(f"  - {n}")
         return
     if sub == "diff":
-        print(PF.diff(rest[0]) or "presets.json already matches this profile")
+        try:
+            print(PF.diff(rest[0]) or "presets.json already matches this profile")
+        except ValueError as e:                          # a two-card profile on a machine without its cards
+            sys.exit(str(e))
         return
     if sub == "apply":
-        d = PF.diff(rest[0])
+        try:
+            d = PF.diff(rest[0])
+        except ValueError as e:
+            sys.exit(str(e))
         if not d and cur == rest[0]:
             print("presets.json already matches this profile")
             return

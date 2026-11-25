@@ -594,6 +594,11 @@ def validate_presets(text: str) -> dict:
     if uu is not None and not (isinstance(uu, list) and len(uu) <= 4
                                and all(isinstance(x, str) and SP.UUID_RE.fullmatch(x) for x in uu)):
         errors.append("common: gpu_uuids is a list of up to 4 card UUIDs, as nvidia-smi prints them (GPU-...)")
+    gg = (cfg.get("common") or {}).get("gpu")
+    if isinstance(uu, list) and isinstance(gg, list) and len(gg) != len(uu):
+        errors.append(f"common: gpu names {len(gg)} card(s) and gpu_uuids {len(uu)}: the UUIDs choose the cards "
+                      "(numbers shift when a card is added); remove gpu_uuids to choose by number, or give a preset its "
+                      "own \"gpu\"")
     if (cfg.get("server") or {}).get("private"):
         errors.append("server.private is for bench/ab.py's own server, not for the running presets")
     if (cfg.get("gateway") or {}).get("enabled") is False:

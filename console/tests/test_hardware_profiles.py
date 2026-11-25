@@ -321,3 +321,13 @@ def test_a_card_lost_with_more_ram_moves_without_a_download(home, monkeypatch):
     h = P.follow(machine(126))
     assert h["change"] == "less" and h["moved"]["to"] == "m6000-32g"          # the same RAM's one-card profile
     assert P.follow(machine(126))["target"] == "m6000-128g"                  # then the bigger one is offered
+
+
+def test_gpu_and_gpu_uuids_must_agree(monkeypatch):
+    import strata_presets as SP
+    monkeypatch.setattr(SP, "gpu_index_by_uuid", lambda: {"GPU-2": 0, "GPU-3": 1})
+    try:
+        SP.card_numbers({"gpu": [0], "gpu_uuids": ["GPU-2", "GPU-3"]})
+        raise AssertionError("not refused")
+    except ValueError as e:
+        assert "remove gpu_uuids" in str(e)

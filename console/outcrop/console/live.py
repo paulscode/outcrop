@@ -172,11 +172,16 @@ class Live:
             except N.NVMLError:                          # that card is gone (swapped): the first one, as before
                 h = N.nvmlDeviceGetHandleByIndex(0)
             self._gpus_more = []                         # the other cards of a two-card profile
+            seen = {_try(lambda: _s(N.nvmlDeviceGetUUID(h)))}
             for i, c in enumerate(cards[1:], start=1):
                 try:
-                    self._gpus_more.append((i, handle(c)))
-                except N.NVMLError:
-                    pass
+                    hh = handle(c)
+                except N.NVMLError:                      # a card that is gone: not sampled
+                    continue
+                u = _try(lambda hh=hh: _s(N.nvmlDeviceGetUUID(hh)))
+                if u not in seen:                        # never the same card twice (the first card's stand-in, card 0)
+                    seen.add(u)
+                    self._gpus_more.append((i, hh))
             name = N.nvmlDeviceGetName(h)
             # A GB10 shares the system's memory with the CPU: NVML has no memory figures for it ("Not Supported")
             mem = _try(lambda: N.nvmlDeviceGetMemoryInfo(h))
@@ -211,7 +216,7 @@ class Live:
     def _gpu_sample(self, now: float) -> dict:
         # presets.json changed (a hardware profile applied, on Ubuntu while the console runs): the cards are looked up
         # again, at most once a minute
-        if self.nvml is not None and now - getattr(self, "_cards_checked", 0) > 60:
+        if now - getattr(self, "_cards_checked", 0) > 60:
             self._cards_checked = now
             try:
                 m = config.PRESETS_FILE.stat().st_mtime

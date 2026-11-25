@@ -450,7 +450,9 @@ def _switch(name: str, *, cancel_inflight: bool = False, by: str = "cli", source
     # 1. plan
     phase("plan", "Plan")
     try:
-        SP.render(name, cfg)                                  # a bad preset fails here, with a clear message
+        # a bad preset fails here, with a clear message; not strict about the RAM, which the running engine still holds
+        # (the engine's start renders again, strictly)
+        SP.render(name, cfg, strict=False)
     except (KeyError, ValueError) as e:
         raise SwitchError(str(e.args[0] if e.args else e)) from None
     pack = cfg["presets"][name]["pack"]
