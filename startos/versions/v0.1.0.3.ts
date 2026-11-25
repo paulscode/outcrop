@@ -5,7 +5,7 @@ export const v_0_1_0_3 = VersionInfo.of({
   releaseNotes: {
     en_US:
       'Outcrop now uses a second Quadro M6000 (or Tesla M40): with two cards, the hardware profile for two runs every ' +
-      'preset on both. Measured: long prompts read 34 to 85% faster, code and documents answered up to 31% faster, and ' +
+      'preset on both. Measured: long prompts read 34 to 86% faster, code and documents answered up to 45% faster, and ' +
       'with 32 GB of RAM the second card holds the experts that would otherwise be read from the disk. Adding a card is ' +
       'offered in a task (Update hardware settings takes it); taking one out moves back to the one-card profile by ' +
       'itself.\n\n' +

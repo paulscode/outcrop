@@ -61,9 +61,9 @@ With two M6000s (or M40s), the `m6000x2-` profiles run every preset on both: Str
 layers on each card with its own expert cache and attention cache, and `--pipeline-windows 2`, which starts the next
 step on the first card while the second checks the drafts. The cards hand over through RAM, so a direct link between
 them is not needed. Measured on one machine ([FINDINGS.md](FINDINGS.md)): with 32 GB the second card is mostly a second
-expert cache (`balanced` 14 to 23% faster, the disk no longer read while answering); with every RAM size, prompts of
-16K tokens and more are read 34 to 85% faster and code and documents are answered up to 31% faster, while free-form
-writing gains little. There is no two-card profile for 192 GB and more yet: such a machine is offered the one-card
+expert cache (`balanced` 13 to 45% faster, the disk no longer read while answering); with every RAM size, prompts of
+16K tokens and more are read 34 to 86% faster and code and documents are answered up to 45% faster, while free-form
+writing gains little (0 to 13%). There is no two-card profile for 192 GB and more yet: such a machine is offered the one-card
 `m6000-256g`, and keeps its two-card profile until it is applied. A preset can name its cards itself (`"gpu": [0]` runs it on the first card alone).
 
 ## When the hardware changes
