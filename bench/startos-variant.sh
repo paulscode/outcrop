@@ -12,7 +12,7 @@
 # Needs: ssh to the server as start9 with sudo (HOST=YOUR-SERVER.local, required), a token in $OUTCROP_TOKEN_FILE (default
 # ~/.config/outcrop-test/token).  BASE=PRESET starts from that preset's settings (the GB10's prefill and draft
 # options) instead of a bare one, CONTEXT sets the context (default 262144), and ARGS
-# adds engine options ("--ple-io ram").  PACK "shipped" measures the service's own preset NAME as it is (step 1 skipped).
+# adds engine options ("--ple-io ram"), GPUS the cards to run on ("0,1": Strata's layer split across two).  PACK "shipped" measures the service's own preset NAME as it is (step 1 skipped).
 # TAG (32g, say) goes in the file name.  Writes bench/results/startos-<host>-[<TAG>-]<NAME>-<date>.json.
 set -euo pipefail
 NAME=${1:?usage: startos-variant.sh NAME PACK [BUDGET_GIB|auto] [CONV_CACHE_MIB|default]}
@@ -51,9 +51,9 @@ PY'
 }
 
 echo "== $NAME: $PACK, budget $BUDGET, conversation cache $CONV, on $HOST"
-[ "$PACK" = shipped ] || ssh -o BatchMode=yes "start9@$HOST" "$ATTACH python3 - '$NAME' '$PACK' '$BUDGET' '$CONV' '${BASE:-}' '${CONTEXT:-262144}' '${ARGS:-}'" <<'PY'
+[ "$PACK" = shipped ] || ssh -o BatchMode=yes "start9@$HOST" "$ATTACH python3 - '$NAME' '$PACK' '$BUDGET' '$CONV' '${BASE:-}' '${CONTEXT:-262144}' '${ARGS:-}' '${GPUS:-}'" <<'PY'
 import json, os, sys
-name, pack, budget, conv, base, context, extra = sys.argv[1:8]
+name, pack, budget, conv, base, context, extra, gpus = sys.argv[1:9]
 path = os.environ.get("OUTCROP_HOME", "/data") + "/presets.json"
 c = json.load(open(path))
 p = dict(c["presets"][base]) if base else {}
@@ -66,6 +66,8 @@ if budget != "auto":
     p["resident_budget_gib"] = int(budget)
 if conv != "default":
     p["args"] = p.get("args", []) + [f"--conversation-cache-mib {int(conv)}"]
+if gpus:
+    p["gpu"] = [int(x) for x in gpus.split(",")]
 c["presets"][name] = p
 tmp = path + ".tmp"
 json.dump(c, open(tmp, "w"), indent=2)
