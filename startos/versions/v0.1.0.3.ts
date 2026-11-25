@@ -13,8 +13,9 @@ export const v_0_1_0_3 = VersionInfo.of({
       'stalling a server that does not have the RAM.',
   },
   migrations: {
-    // Nothing to migrate: "gpu" is a new, optional key and the two-card profiles new files; 0.1.0:2 reads neither (a
-    // two-card presets.json there runs on one card).
+    // Nothing to migrate: "gpu" is a new, optional key and the two-card profiles new files; 0.1.0:2 reads neither, so a
+    // two-card presets.json runs on one card there, with the 1M presets' larger attention cache on that card (131,072
+    // tokens a layer), until its Update hardware settings applies the one-card profile it then offers.
     up: async ({ effects }) => {},
     down: async ({ effects }) => {},
   },
