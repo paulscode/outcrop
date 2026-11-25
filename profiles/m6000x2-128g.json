@@ -1,0 +1,51 @@
+{
+  "profile": {
+    "name": "m6000x2-128g",
+    "extends": "m6000-128g",
+    "title": "Two Quadro M6000 24 GB with 128 GB of RAM",
+    "match": {
+      "gpus": [
+        "Quadro M6000 24GB"
+      ],
+      "similar_gpus": [
+        "Tesla M40 24GB"
+      ],
+      "vram_mib_min": 23000,
+      "gpu_count": 2,
+      "ram_gib": [
+        96,
+        192
+      ]
+    },
+    "packs": [
+      "q2_0",
+      "iq3_xxs",
+      "iq3_s"
+    ],
+    "default_preset": "quality",
+    "tested": "2026-11-25 under StartOS (T5810, E5-2699 v3, NVMe): quality 39.9 / 48.5 / 31.5 / 41.1 tok/s (one card: 38.4 / 41.6 / 30.6 / 37.7) (chat / code / story / 4K doc), 48K prompts 321 tok/s (184); quality-1m reads a 190K-token prompt at 313 tok/s (one card: 168) and answers after it at 41.8 (31.9); answer checks passed",
+    "notes": [
+      "Both cards run Strata's layer split (about half the layers each, with their own expert cache and attention cache) and --pipeline-windows 2, which starts the next step on the first card while the second checks the drafts. Direct copies between the cards are not needed (on the test machine they did not work); the cards hand over through RAM.",
+      "The million-token presets keep 131,072 tokens of each layer's attention cache on the cards (one card: 32,768), since each card holds only its own layers': answers after a long prompt are faster."
+    ]
+  },
+  "common": {
+    "args": [
+      "--adapt-async 1",
+      "--conversation-cache-mib 24576",
+      "--conversation-cache-slots 8",
+      "--pipeline-windows 2"
+    ]
+  },
+  "presets": {
+    "speed-1m": {
+      "kv_resident": 131072
+    },
+    "balanced-1m": {
+      "kv_resident": 131072
+    },
+    "quality-1m": {
+      "kv_resident": 131072
+    }
+  }
+}

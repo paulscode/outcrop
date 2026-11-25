@@ -224,3 +224,38 @@ def test_startos_a_presets_file_made_before_the_start_still_tells_its_pack_choic
     out = json.loads(run_profile_py(tmp_path, "follow", ram=31).stdout)
     assert out["first"] is False and out["packs_message"] == "only the boot preset's pack"
     assert json.loads(run_profile_py(tmp_path, "follow", ram=31).stdout)["packs_message"] is None
+
+
+M6000_2 = {**M6000, "index": "1", "uuid": "GPU-3"}
+
+
+def two(ram):
+    return {**machine(ram), "gpus": [M6000, M6000_2]}
+
+
+def test_a_second_card_gets_the_two_card_profile(home, monkeypatch):
+    for ram, one, both in ((31, "m6000-32g", "m6000x2-32g"), (63, "m6000-64g", "m6000x2-64g"), (126, "m6000-128g", "m6000x2-128g")):
+        assert P.suggest(machine(ram))[0] == one
+        assert P.suggest(two(ram))[0] == both
+    r = P.render("m6000x2-64g", None, two(63))
+    assert r["common"]["gpu"] == [0, 1] and "CUDA_VISIBLE_DEVICES" not in r["common"].get("env", {})
+    assert "--pipeline-windows 2" in r["common"]["args"]
+    assert P.render("m6000x2-128g", None, two(126))["presets"]["quality-1m"]["kv_resident"] == 131072
+    # a two-card profile never fits one card
+    kind, why = P.fit(P.compose("m6000x2-64g"), machine(63))
+    assert kind is None and "2 of these cards" in why[0]
+
+
+def test_a_card_added_is_offered_and_a_card_removed_moves_back(home, monkeypatch):
+    install(home, "m6000-64g", 63, boot="quality", monkeypatch=monkeypatch)
+    h = P.hardware(None, two(63))
+    assert (h["change"], h["fits"]) == ("more", "m6000x2-64g") and "2 cards" in h["message"]
+    assert P.follow(two(63))["change"] == "more" and P.current()["profile"]["name"] == "m6000-64g"   # only offered
+    monkeypatch.setattr(P, "facts", lambda: two(63))
+    P.apply("m6000x2-64g")
+    assert P.current()["common"]["gpu"] == [0, 1]
+    h = P.follow(machine(63))                                  # a card taken out, or failed
+    assert h["change"] == "less" and h["moved"]["to"] == "m6000-64g"
+    assert "fewer than the 2 cards" in h["message"]
+    c = P.current()
+    assert "gpu" not in c["common"] and (home / "state" / "default_preset").read_text().strip() == "quality"

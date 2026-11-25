@@ -1,0 +1,39 @@
+{
+  "profile": {
+    "name": "m6000x2-32g",
+    "extends": "m6000-32g",
+    "title": "Two Quadro M6000 24 GB with 32 GB of RAM",
+    "match": {
+      "gpus": [
+        "Quadro M6000 24GB"
+      ],
+      "similar_gpus": [
+        "Tesla M40 24GB"
+      ],
+      "vram_mib_min": 23000,
+      "gpu_count": 2,
+      "ram_gib": [
+        24,
+        48
+      ]
+    },
+    "packs": [
+      "q2_0",
+      "iq3_xxs"
+    ],
+    "default_preset": "speed",
+    "tested": "2026-11-25 under StartOS (T5810, E5-2699 v3, NVMe): speed 46.2 / 60.0 / 35.9 / 45.9 tok/s (one card: 41.2 / 45.9 / 32.7 / 40.2), balanced 40.4 / 49.3 / 31.4 / 41.4 (one card: 32.1 / 33.9 / 27.8 / 33.5, reading the disk) (chat / code / story / 4K doc); 48K prompts 311 tok/s (one card: 181); answer checks passed",
+    "notes": [
+      "Both cards run Strata's layer split (about half the layers each, with their own expert cache and attention cache) and --pipeline-windows 2, which starts the next step on the first card while the second checks the drafts. Direct copies between the cards are not needed (on the test machine they did not work); the cards hand over through RAM.",
+      "With 32 GB the second card is mostly a second expert cache: the two hold 86% of the experts, so balanced stops reading the disk while answering, as one card did with 48 GB of RAM."
+    ]
+  },
+  "common": {
+    "args": [
+      "--adapt-async 1",
+      "--conversation-cache-mib 4096",
+      "--conversation-cache-slots 2",
+      "--pipeline-windows 2"
+    ]
+  }
+}

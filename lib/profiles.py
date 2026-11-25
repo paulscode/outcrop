@@ -146,6 +146,19 @@ def matched_gpu(prof: dict, f: dict) -> dict | None:
             or next((g for g in f["gpus"] if g["name"] in m.get("similar_gpus", [])), None))
 
 
+def gpu_count(prof: dict) -> int:
+    """How many cards a profile runs on (match.gpu_count; 1 when it does not say)."""
+    return int(prof["profile"].get("match", {}).get("gpu_count", 1))
+
+
+def matched_gpus(prof: dict, f: dict) -> list[dict]:
+    """This machine's cards the profile was made for (or of the same family), with enough VRAM, in nvidia-smi's order."""
+    m = prof["profile"].get("match", {})
+    names_ = set(m.get("gpus", [])) | set(m.get("similar_gpus", []))
+    return [g for g in f["gpus"] if g["name"] in names_ and g["vram_mib"] >= m.get("vram_mib_min", 0)
+            and g.get("memory", "discrete") == m.get("memory", "discrete")]
+
+
 def fit(prof: dict, f: dict) -> tuple[str | None, list[str]]:
     """How well a profile fits this machine: "exact" (a GPU it was made for and RAM in its range), "similar" (a GPU
     of the same family), or None, with the reasons."""
@@ -166,6 +179,9 @@ def fit(prof: dict, f: dict) -> tuple[str | None, list[str]]:
                       f"{gpu.get('memory', 'discrete')} memory"]
     if gpu["vram_mib"] < m.get("vram_mib_min", 0):
         return None, [f"needs {m['vram_mib_min']} MiB of VRAM; {gpu['name']} has {gpu['vram_mib']}"]
+    n = gpu_count(prof)
+    if n > 1 and len(matched_gpus(prof, f)) < n:
+        return None, [f"for {n} of these cards; this machine has {len(matched_gpus(prof, f))}"]
     lo, hi = m.get("ram_gib", [0, 10**6])
     if not lo <= f["ram_gib"] < hi:
         return None, [f"for {lo} to {hi} GiB of RAM; this machine has {f['ram_gib']}"]
@@ -179,21 +195,24 @@ def suggest(f: dict | None = None) -> tuple[str | None, str, list[str]]:
     f = f or facts()
     if not f["gpus"]:
         return None, "none", ["no NVIDIA GPU found: is the NVIDIA driver installed? (`nvidia-smi` should list the card)"]
-    similar = None
+    found: dict[str, list] = {"exact": [], "similar": []}
     reasons = []
     for n in names():
         try:
-            kind, why = fit(compose(n), f)
+            prof = compose(n)
+            kind, why = fit(prof, f)
         except (KeyError, ValueError) as e:              # a broken profile file: say so, and go on
             reasons.append(f"{n}: cannot be read ({str(e).strip(chr(39))})")
             continue
-        if kind == "exact":
-            return n, "exact", why
-        if kind == "similar" and not similar:
-            similar = (n, why)
-        reasons += [f"{n}: {w}" for w in why]
-    if similar:
-        return similar[0], "similar", similar[1]
+        if kind:
+            found[kind].append((gpu_count(prof), n, why))
+        else:
+            reasons += [f"{n}: {w}" for w in why]
+    # an exact fit first; of those, the one that uses the most of this machine's cards (a second card is used)
+    for kind in ("exact", "similar"):
+        if found[kind]:
+            _, n, why = max(found[kind], key=lambda x: x[0])
+            return n, kind, why
     return None, "none", reasons
 
 
@@ -205,7 +224,12 @@ def render(name: str, current: dict | None = None, f: dict | None = None) -> dic
     the engine and the console are pointed at the card the profile matched, by its UUID."""
     prof = usable(name)
     out = {k: v for k, v in prof.items() if k != "profile"}
-    if f and len(f.get("gpus", [])) > 1:
+    n = gpu_count(prof)
+    if f and n > 1:
+        # a profile for several cards: Strata's layer split across the first n of them (numbered as nvidia-smi does)
+        cards = matched_gpus(prof, f)[:n]
+        out.setdefault("common", {})["gpu"] = [int(g["index"]) for g in cards]
+    elif f and len(f.get("gpus", [])) > 1:
         g = matched_gpu(prof, f)
         if g and g.get("uuid"):
             out.setdefault("common", {}).setdefault("env", {})["CUDA_VISIBLE_DEVICES"] = g["uuid"]
@@ -364,22 +388,39 @@ def hardware(cfg: dict | None = None, f: dict | None = None) -> dict:
         still = fit(compose(cur), f)[0]
     except (KeyError, ValueError):
         still = None                                  # a profile this version no longer has
-    if fits == cur or still:
+    try:
+        more_cards = gpu_count(compose(fits)) > gpu_count(compose(cur))
+        fewer_cards = gpu_count(compose(fits)) < gpu_count(compose(cur))
+    except (KeyError, ValueError):
+        more_cards = fewer_cards = False
+    if fits == cur or (still and not more_cards):
         return out
     try:
         gpu_same = bool(matched_gpu(compose(cur), f))
         lower = _ram_low(fits) < _ram_low(cur)
     except (KeyError, ValueError):
         gpu_same, lower = True, False
-    out["change"] = "other" if not gpu_same else "less" if lower else "more"
+    # fewer cards than the profile runs on: like less RAM, its presets cannot start, so the move is made by itself
+    out["change"] = ("other" if not gpu_same else "less" if (lower or fewer_cards) else "more")
+    try:
+        out["cards"] = {"profile": gpu_count(compose(cur)), "fits": gpu_count(compose(fits))}
+    except (KeyError, ValueError):                    # a profile this version no longer has
+        out["cards"] = {"profile": 1, "fits": gpu_count(compose(fits))}
     newp = compose(fits)["profile"]
     keep = wanted_packs({**(cfg or {}), "profile": {"name": fits}, "presets": compose(fits).get("presets", {})})
     out["new_packs"] = [p for p in keep if not pack_ready(p)]
     out["download_gb"] = disk_need_gb({"profile": {"name": fits}}, out["new_packs"]) - BASE_GB if out["new_packs"] else 0
     title = newp.get("title", fits)
-    if out["change"] == "less":
+    if out["change"] == "less" and fewer_cards:
+        out["message"] = (f"This server now has fewer than the {out['cards']['profile']} cards profile {cur} runs on: "
+                          f"profile {fits} ({title}) fits it.")
+    elif out["change"] == "less":
         out["message"] = (f"This server now has {f['ram_gib']} GiB of RAM, less than profile {cur} is for: profile "
                           f"{fits} ({title}) fits it, and its presets fit in this RAM.")
+    elif out["change"] == "more" and more_cards:
+        out["message"] = (f"This server now has {gpu_count(compose(fits))} cards: hardware profile {fits} ({title}) "
+                          f"runs on both, with presets {', '.join(compose(fits).get('presets', {}))}. Outcrop keeps "
+                          f"{cur} until you apply it.")
     elif out["change"] == "more":
         dl = f" It downloads {out['download_gb']} GB ({', '.join(out['new_packs'])})." if out["new_packs"] else ""
         out["message"] = (f"This server now has {f['ram_gib']} GiB of RAM: hardware profile {fits} ({title}) fits it, "
@@ -427,7 +468,11 @@ def follow(f: dict | None = None) -> dict:
     words = f"; the boot preset is now {moved['boot']}" if moved["boot"] != moved["boot_from"] else ""
     gone = f" Presets no longer offered: {', '.join(moved['presets_gone'])}." if moved["presets_gone"] else ""
     h["moved"] = rec
-    h["message"] = (f"This server now has {f.get('ram_gib')} GiB of RAM, less than profile {moved['from']} is for: Outcrop "
+    cards = h.get("cards") or {}
+    why = (f"This server now has fewer than the {cards['profile']} cards profile {moved['from']} runs on"
+           if cards.get("fits", 1) < cards.get("profile", 1) else
+           f"This server now has {f.get('ram_gib')} GiB of RAM, less than profile {moved['from']} is for")
+    h["message"] = (f"{why}: Outcrop "
                     f"moved to {moved['to']} ({compose(moved['to'])['profile'].get('title', '')}){words}.{gone} Your "
                     "settings were kept; the old presets.json was kept beside it.")
     return h

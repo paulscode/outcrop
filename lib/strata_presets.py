@@ -25,6 +25,11 @@ SHARD = "Qwen3.8-Flash-Next-GSQ-RCO-{Q}-{n:05d}-of-00002.gguf"
 # Free RAM (GiB) the engine needs to pin every routed expert in RAM ("full" arena); below it the engine keeps the most used experts
 # in RAM and reads the rest from the model file ("resident").  From the M6000 exploration's 64 GB measurements, with margin.
 FULL_ARENA_GIB = {"q2_0": 42, "iq2_xs": 44, "iq3_xxs": 50, "iq3_s": 57}
+# The attention cache in pinned RAM per million tokens of context (Strata keeps all of it there, and the part
+# --kv-resident names in VRAM too): 12.38 GiB at int8, from the engine's log for a 1M-token preset (2026-11-25).
+KV_GIB_PER_MTOKEN = {"int8": 12.4}
+# The fewest GiB of experts in RAM a preset is started with (the low-RAM budget's own floor is 4)
+MIN_EXPERTS_GIB = 4
 
 
 def load() -> dict:
@@ -279,6 +284,21 @@ def engine_args(p: dict, top: dict) -> tuple[list[str], dict, list[str]]:
     # are read from the model file in place and the cache holds them all (Strata's measured setting on that part).
     need = FULL_ARENA_GIB.get(pack, 60)
     free = mem_available_gib()
+    # Several conversations at once ("parallel": Strata's --batch): each slot keeps its whole attention cache in pinned
+    # RAM, the first one inside the reserve below, the others beside the experts.  Counted here so the experts' share
+    # shrinks to fit; refused when what is left is too little to start (4 slots of 262K tokens on 32 GB stalled the
+    # machine for good, two-GPU log 2026-11-25).
+    slots = int(p.get("parallel") or 1)
+    if slots > 1 and ctx > 8192:
+        per_slot = ctx * KV_GIB_PER_MTOKEN.get(p.get("kv", "int8"), 2 * KV_GIB_PER_MTOKEN["int8"]) / (1 << 20)
+        extra = (slots - 1) * per_slot
+        if free - extra < MIN_EXPERTS_GIB + STARTOS_RESERVE_GIB:
+            raise ValueError(f"{slots} conversations of {ctx:,} tokens need about {slots * per_slot:.0f} GiB of RAM for "
+                             f"their attention caches, and {free} GiB is available: too little left for the model. Use "
+                             f"fewer (\"parallel\") or a shorter context (32,768 tokens takes about "
+                             f"{32768 * KV_GIB_PER_MTOKEN['int8'] / (1 << 20):.1f} GiB a conversation)")
+        free -= round(extra)
+        notes.append(f"{slots} conversations at once: {extra:.1f} GiB of RAM kept for the others' attention caches")
     mode = p.get("ram_mode", top.get("ram_mode", "auto"))
     if mode == "mmap":
         args += ["--mmap-experts"]
@@ -342,7 +362,7 @@ def unsafe(cfg: dict, name: str) -> list[str]:
     for k, v in {**top.get("env", {}), **p.get("env", {})}.items():
         if v is not None and not SAFE_VALUE.fullmatch(str(v)):
             why.append(f"the value of {k} is not allowed (letters, digits and . _ : , + = - only)")
-    g = p.get("gpu")
+    g = p.get("gpu", top.get("gpu"))
     if g is not None and not (isinstance(g, list) and 1 <= len(g) <= 4 and len(set(g)) == len(g)
                               and all(isinstance(x, int) and not isinstance(x, bool) and 0 <= x <= 7 for x in g)):
         why.append("gpu is a list of 1 to 4 different GPU numbers, as nvidia-smi numbers them ([0, 1])")
@@ -389,10 +409,12 @@ def render(name: str, cfg: dict | None = None) -> tuple[Path, list[str]]:
         "engine_ready_s": 1800,
         "open_browser": False,
     }
-    if p.get("gpu"):
+    gpus = p.get("gpu", cfg.get("common", {}).get("gpu"))
+    if gpus:
         # the cards to run on, numbered as nvidia-smi numbers them: two or more are Strata's layer split
-        # (docs/MULTI_GPU.md); Strata sets CUDA_VISIBLE_DEVICES from it, so the profile's one-card pin goes
-        run["gpu"] = list(p["gpu"])
+        # (docs/MULTI_GPU.md); Strata sets CUDA_VISIBLE_DEVICES from it, so the profile's one-card pin goes.  A preset's
+        # own "gpu" wins over the profile's ("common"), so one preset can run on one card of a two-card machine.
+        run["gpu"] = list(gpus)
         env.pop("CUDA_VISIBLE_DEVICES", None)
     if env:
         run["env"] = env

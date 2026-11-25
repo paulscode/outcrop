@@ -61,3 +61,27 @@ def test_startos_budget_knobs(tmp_path, monkeypatch):
     assert SP.startos_budget({"pack": "iq3_xxs", "args": ["--conversation-cache-mib 0"]}, top, 25)[0] == 16
     assert SP.startos_budget({"pack": "iq3_xxs", "resident_budget_gib": 12}, top, 25)[0] == 12
     assert SP.startos_budget({"pack": "iq3_xxs", "resident_budget_gib": 19}, top, 25)[0] == 16
+
+
+def test_more_conversations_at_once_leave_less_for_the_experts(monkeypatch):
+    """Each extra slot ("parallel") keeps its attention cache in pinned RAM: the experts' share shrinks to fit, and a
+    preset whose slots leave too little to start is refused (4 slots of 262K tokens on 32 GB stalled a server)."""
+    monkeypatch.setenv("OUTCROP_PLATFORM", "startos")
+    monkeypatch.setattr(SP, "mem_available_gib", lambda path=None: 25)       # a 32 GB StartOS server
+    monkeypatch.setattr(SP, "meminfo_kib", lambda path=None: {"MemTotal": 32 * GIB, "MemAvailable": 30 * GIB})
+
+    def budget(p):
+        args, _, notes = SP.engine_args({"pack": "q2_0", **p}, {})
+        return int(args[args.index("--resident-budget-gib") + 1]), notes
+
+    one, _ = budget({"context": 262144})
+    four, notes = budget({"context": 262144, "parallel": 4})
+    assert one == 16 and four < one - 8 and any("4 conversations at once" in n for n in notes)
+    small, _ = budget({"context": 32768, "parallel": 4})
+    assert small >= one - 2                                                  # short slots cost little
+    monkeypatch.setattr(SP, "mem_available_gib", lambda path=None: 14)
+    try:
+        SP.engine_args({"pack": "q2_0", "context": 262144, "parallel": 4}, {})
+        raise AssertionError("not refused")
+    except ValueError as e:
+        assert "4 conversations of 262,144 tokens" in str(e) and "fewer" in str(e)
