@@ -390,7 +390,8 @@ class Alerts:
                    f"run `outcrop profile apply {h.get('target') or h['fits']}`" if h["change"] == "less" else
                    f"run `outcrop profile apply {h.get('target') or h['fits']}`, then `./setup.sh` in the Outcrop folder to download what it needs")
             self.open("hardware", "hardware:fits", f"{h['message']} To use it, {how}.",
-                      {"profile": h["profile"], "fits": h["fits"], "ram_gib": h["ram_gib"], "change": h["change"]},
+                      {"profile": h["profile"], "fits": h.get("target") or h["fits"], "ram_gib": h["ram_gib"],
+                       "change": h["change"]},
                       level="error" if h["change"] == "less" else None)
         elif self.is_open("hardware:fits"):
             self.close("hardware:fits", f"hardware profile {h['profile']} fits this machine again"

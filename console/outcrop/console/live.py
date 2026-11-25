@@ -160,16 +160,21 @@ class Live:
             except (OSError, ValueError):
                 common = {}
             gpu = str((common.get("env") or {}).get("CUDA_VISIBLE_DEVICES", ""))
-            cards = [i for i in (common.get("gpu") or []) if isinstance(i, int) and not isinstance(i, bool)]
+            # a two-card profile's cards by UUID (the numbers shift when a card is added in a lower slot), else by number
+            cards = [u for u in (common.get("gpu_uuids") or []) if isinstance(u, str) and u.startswith("GPU-")]
+            cards = cards or [i for i in (common.get("gpu") or []) if isinstance(i, int) and not isinstance(i, bool)]
+
+            def handle(c):
+                return N.nvmlDeviceGetHandleByUUID(c) if isinstance(c, str) else N.nvmlDeviceGetHandleByIndex(c)
             try:
-                h = (N.nvmlDeviceGetHandleByIndex(cards[0]) if cards else
+                h = (handle(cards[0]) if cards else
                      N.nvmlDeviceGetHandleByUUID(gpu) if gpu.startswith("GPU-") else N.nvmlDeviceGetHandleByIndex(0))
             except N.NVMLError:                          # that card is gone (swapped): the first one, as before
                 h = N.nvmlDeviceGetHandleByIndex(0)
-            self._gpus_more = []                         # the other cards of a two-card profile: temperature and limits
-            for i in cards[1:]:
+            self._gpus_more = []                         # the other cards of a two-card profile
+            for i, c in enumerate(cards[1:], start=1):
                 try:
-                    self._gpus_more.append((i, N.nvmlDeviceGetHandleByIndex(i)))
+                    self._gpus_more.append((i, handle(c)))
                 except N.NVMLError:
                     pass
             name = N.nvmlDeviceGetName(h)
@@ -204,6 +209,17 @@ class Live:
         return s
 
     def _gpu_sample(self, now: float) -> dict:
+        # presets.json changed (a hardware profile applied, on Ubuntu while the console runs): the cards are looked up
+        # again, at most once a minute
+        if self.nvml is not None and now - getattr(self, "_cards_checked", 0) > 60:
+            self._cards_checked = now
+            try:
+                m = config.PRESETS_FILE.stat().st_mtime
+            except OSError:
+                m = None
+            if getattr(self, "_cards_mtime", m) != m:
+                self._nvml_init()
+            self._cards_mtime = m
         N = self.nvml
         if N is None:
             d = ((self.telemetry or {}).get("devices") or [{}])[0]
@@ -248,24 +264,44 @@ class Live:
             _name_hidden(procs, self._ours_on_gpu)
         g["procs"] = procs
         if getattr(self, "_gpus_more", None):
-            # two cards: one line per card, and the hotter card's temperature and every card's limits for the alerts
-            cards = [{"index": None, "temp": g.get("temp"), "power": g.get("power"), "util": g.get("util"),
-                      "throttle": g.get("throttle")}]
+            # two cards: one entry per card in "cards", and the figures the pages and alerts read made for both: power
+            # and memory added up (the Energy and Memory pages), the hotter card's temperature and every card's limits
+            # (gpu_hot), every card's processes (gpu_contention), utilisation the busier card's
+            cards = [{"card": 0, "temp": g.get("temp"), "power": g.get("power"), "util": g.get("util"),
+                      "mem_used": g.get("mem_used"), "mem_total": g.get("mem_total"), "throttle": g.get("throttle")}]
             for i, hh in self._gpus_more:
                 t = _try(lambda hh=hh: N.nvmlDeviceGetTemperature(hh, N.NVML_TEMPERATURE_GPU))
                 pw = _try(lambda hh=hh: N.nvmlDeviceGetPowerUsage(hh))
                 uu = _try(lambda hh=hh: N.nvmlDeviceGetUtilizationRates(hh))
+                mm = (_try(lambda hh=hh: N.nvmlDeviceGetMemoryInfo(hh, version=N.nvmlMemory_v2))
+                      or _try(lambda hh=hh: N.nvmlDeviceGetMemoryInfo(hh)))
                 rr = _try(lambda hh=hh: N.nvmlDeviceGetCurrentClocksThrottleReasons(hh))
-                cards.append({"index": i, "temp": t, "power": round(pw / 1000.0, 1) if pw is not None else None,
+                cards.append({"card": i, "temp": t, "power": round(pw / 1000.0, 1) if pw is not None else None,
                               "util": uu.gpu if uu is not None else None,
+                              "mem_used": mm.used // (1 << 20) if mm is not None else None,
+                              "mem_total": mm.total // (1 << 20) if mm is not None else None,
                               "throttle": _throttle_names(N, rr) if rr is not None else None})
+                for fn in ("nvmlDeviceGetComputeRunningProcesses", "nvmlDeviceGetGraphicsRunningProcesses"):
+                    for pr in _try(lambda fn=fn, hh=hh: getattr(N, fn)(hh)) or []:
+                        if all(x["pid"] != pr.pid for x in procs):
+                            procs.append({"pid": pr.pid, "mem": (pr.usedGpuMemory or 0) // (1 << 20),
+                                          "name": _proc_name(pr.pid), "kind": "compute" if "Compute" in fn else "graphics"})
+            if any(x["name"] is None for x in procs):
+                _name_hidden(procs, getattr(self, "_ours_on_gpu", None) or _gpu_holders())
             g["cards"] = cards
+
+            def total(k):
+                v = [c[k] for c in cards if c[k] is not None]
+                return round(sum(v), 1) if v else g.get(k)
+            g["power"], g["mem_used"], g["mem_total"] = total("power"), total("mem_used"), total("mem_total")
             temps = [c["temp"] for c in cards if c["temp"] is not None]
             if temps:
                 g["temp"] = max(temps)
-            names_ = sorted({n for c in cards for n in (c["throttle"] or [])})
+            utils = [c["util"] for c in cards if c["util"] is not None]
+            if utils:
+                g["util"] = max(utils)
             if any(c["throttle"] is not None for c in cards):
-                g["throttle"] = names_
+                g["throttle"] = sorted({n for c in cards for n in (c["throttle"] or [])})
         if g.get("power") is not None:
             last = getattr(self, "_last_power_t", None)
             if last is not None:

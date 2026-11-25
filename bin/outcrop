@@ -178,12 +178,17 @@ def cmd_status(_):
     # (lib/profiles.py), else the first
     common = (SP.load().get("common") or {}) if SP.PRESETS_FILE.exists() else {}
     want = str((common.get("env") or {}).get("CUDA_VISIBLE_DEVICES", ""))
+    uuids = [str(u) for u in (common.get("gpu_uuids") or [])]
     cards = [str(i) for i in (common.get("gpu") or [])]
     rows = [r.split(", ") for r in LC.out(["nvidia-smi", "--query-gpu=uuid,memory.used,memory.total,temperature.gpu,power.draw,clocks.sm,index",
                                            "--format=csv,noheader,nounits"]).splitlines()]
     rows = [r for r in rows if len(r) == 7]
-    shown = ([r for r in rows if r[6] in cards] if cards else
+    # a two-card profile's cards by UUID (numbers shift when a card is added in a lower slot), else by number
+    shown = ([r for r in rows if r[0] in uuids] if uuids else [r for r in rows if r[6] in cards] if cards else
              [next((r for r in rows if r[0] == want), rows[0] if rows else None)])
+    if (uuids or cards) and len([r for r in shown if r]) < len(uuids or cards):
+        print(f"{B}GPU:{X}      {Y}{len(uuids or cards) - len([r for r in shown if r])} of the cards the hardware profile "
+              f"runs on cannot be seen (`outcrop profile` shows what fits now){X}")
     for g in [r for r in shown if r]:
         try:
             watts = f"{float(g[4]):.0f} W"
