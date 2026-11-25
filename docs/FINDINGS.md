@@ -468,7 +468,7 @@ configuration passed `bench/qualgate.py`, the tensor split included.
   model's full context at Q8_0; the layer split only adds room (8.3 against 7.6).
 - The MTP draft layer doubles decode (drafts accepted 67 to 100% of the time); 4-token drafts were slower than 3. With
   drafts, Q8_0 is faster than Q6_K (the K-quant costs more to unpack on Maxwell).
-- One card decodes at about a third of the card's memory-bandwidth limit for 22 GB (317 GB/s: about 14 tok/s).
+- One card decodes at about half of the card's memory-bandwidth limit for 22 GB (317 GB/s: about 14 tok/s).
 
 **Long prompts** (read in tokens a second; the time to the first word; decode after it):
 
@@ -483,9 +483,9 @@ configuration passed `bench/qualgate.py`, the tensor split included.
 32.8 tok/s for 1 / 2 / 4 at once without drafts (9 each at 4); with MTP 22.0 / 23.7 / 15.0, so drafts suit one
 conversation at a time. Flash-Next on the same cards: 37.8 / 38.6 / 52.2.
 
-**Against Flash-Next on the same hardware**, the dense 27B model writes 2 to 3 times slower (one card: 7.5 against 40
-to 46; two cards with drafts: 18 to 28 against 31 to 60), reads long prompts 3 to 5 times slower, and serves four
-users at about 60% of Flash-Next's total. What it offers instead: it needs no RAM to speak of (both quants live in
+**Against Flash-Next on the same hardware**, the dense 27B model writes 5 to 6 times slower on one card (7.5 against
+40 to 46), 1.5 to 2 times slower on two with drafts (18 to 28 against 31 to 60), reads long prompts 3 to 5 times
+slower, and serves four users at about 60% of Flash-Next's total. What it offers instead: it needs no RAM to speak of (both quants live in
 VRAM; Flash-Next wants 32 GB or more, and 64 GB for its best pack), and Q8_0 keeps the model's full 262K context on
 two cards. Their answer quality was not compared here (Flash-Next's packs score 89.1 to 93.3 on ISTA-DASLab's task
 average; no matching figure for these 27B quants).
