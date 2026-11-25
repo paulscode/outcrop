@@ -12,7 +12,7 @@
 # Needs: ssh to the server as start9 with sudo (HOST=YOUR-SERVER.local, required), a token in $OUTCROP_TOKEN_FILE (default
 # ~/.config/outcrop-test/token).  BASE=PRESET starts from that preset's settings (the GB10's prefill and draft
 # options) instead of a bare one, CONTEXT sets the context (default 262144), and ARGS
-# adds engine options ("--ple-io ram"), GPUS the cards to run on ("0,1": Strata's layer split across two), ENVS engine settings ("STRATA_MTP_STAGE0=1,K=V"),
+# adds engine options ("--ple-io ram"), GPUS the cards to run on ("0,1": Strata's layer split across two), ENVS engine settings ("STRATA_MTP_STAGE0=1;K=V", separated by ;),
 # PARALLEL conversations decoded together (the preset's "parallel": Strata's --batch), KVR the attention cache's cells
 # per layer kept on the card(s) (the preset's "kv_resident"; the rest is in pinned RAM).  PACK "shipped" measures the service's own preset NAME as it is (step 1 skipped).
 # TAG (32g, say) goes in the file name.  Writes bench/results/startos-<host>-[<TAG>-]<NAME>-<date>.json.
@@ -75,7 +75,7 @@ if par:
 if kvr:
     p["kv_resident"] = int(kvr)
 if envs:
-    p["env"] = {**p.get("env", {}), **dict(kv.split("=", 1) for kv in envs.split(","))}
+    p["env"] = {**p.get("env", {}), **dict(kv.split("=", 1) for kv in envs.split(";"))}
 c["presets"][name] = p
 tmp = path + ".tmp"
 json.dump(c, open(tmp, "w"), indent=2)
