@@ -342,6 +342,10 @@ def unsafe(cfg: dict, name: str) -> list[str]:
     for k, v in {**top.get("env", {}), **p.get("env", {})}.items():
         if v is not None and not SAFE_VALUE.fullmatch(str(v)):
             why.append(f"the value of {k} is not allowed (letters, digits and . _ : , + = - only)")
+    g = p.get("gpu")
+    if g is not None and not (isinstance(g, list) and 1 <= len(g) <= 4 and len(set(g)) == len(g)
+                              and all(isinstance(x, int) and not isinstance(x, bool) and 0 <= x <= 7 for x in g)):
+        why.append("gpu is a list of 1 to 4 different GPU numbers, as nvidia-smi numbers them ([0, 1])")
     eng = p.get("engine", cfg.get("engine", "strata"))
     if not isinstance(eng, str) or not ENGINE_NAME.fullmatch(eng):
         why.append(f"engine {eng!r} is not a file name in {ENGINE_DIR}")
@@ -385,6 +389,11 @@ def render(name: str, cfg: dict | None = None) -> tuple[Path, list[str]]:
         "engine_ready_s": 1800,
         "open_browser": False,
     }
+    if p.get("gpu"):
+        # the cards to run on, numbered as nvidia-smi numbers them: two or more are Strata's layer split
+        # (docs/MULTI_GPU.md); Strata sets CUDA_VISIBLE_DEVICES from it, so the profile's one-card pin goes
+        run["gpu"] = list(p["gpu"])
+        env.pop("CUDA_VISIBLE_DEVICES", None)
     if env:
         run["env"] = env
     for k in ("parallel", "sampling", "reasoning_effort", "max_tokens", "allowed_hosts", "cors_origins", "trusted_origins",

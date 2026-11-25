@@ -91,3 +91,36 @@ print(open(path).read())
     run = json.loads(r.stdout)
     assert run["vision"]["gpu"] is True
     assert run["vision"]["elastic"] is False
+
+
+def test_a_preset_on_two_gpus(tmp_path):
+    """A preset's "gpu" goes to Strata's config (two cards: its layer split) and replaces the profile's one-card pin;
+    anything but a short list of card numbers is refused."""
+    eng = tmp_path / "engines"
+    eng.mkdir()
+    (eng / "strata-0211").write_text("")
+    script = f"""
+import json, sys
+sys.path.insert(0, {str(ROOT / 'lib')!r})
+import profiles, strata_presets as SP
+cfg = profiles.compose("m6000-64g")
+cfg.pop("profile", None)
+cfg.setdefault("common", {{}}).setdefault("env", {{}})["CUDA_VISIBLE_DEVICES"] = "GPU-1234"   # as profiles.render pins it
+cfg["presets"]["two"] = dict(cfg["presets"]["quality"], gpu=[0, 1])
+out = {{"two": json.load(open(SP.render("two", cfg)[0])), "one": json.load(open(SP.render("quality", cfg)[0]))}}
+bad = []
+for g in ("0,1", [0, 0], [0, 9], [True], [], [0, 1, 2, 3, 4]):
+    cfg["presets"]["bad"] = dict(cfg["presets"]["quality"], gpu=g)
+    bad.append(bool(SP.unsafe(cfg, "bad")))
+out["bad"] = bad
+print(json.dumps(out))
+"""
+    e = {k: v for k, v in os.environ.items() if k not in KEYS}
+    e.update(OUTCROP_HOME=str(tmp_path / "home"), OUTCROP_STRATA="/opt/strata", OUTCROP_ENGINE_DIR=str(eng),
+             OUTCROP_CUDA_LIB="/opt/cuda/lib")
+    r = subprocess.run([sys.executable, "-c", script], env=e, capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    out = json.loads(r.stdout)
+    assert out["two"]["gpu"] == [0, 1] and "CUDA_VISIBLE_DEVICES" not in out["two"].get("env", {})
+    assert "gpu" not in out["one"] and out["one"]["env"]["CUDA_VISIBLE_DEVICES"] == "GPU-1234"
+    assert all(out["bad"])
