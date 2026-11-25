@@ -52,7 +52,7 @@ if not name:
     print("presets.json has no hardware profile yet: start Outcrop once first", file=sys.stderr)
     sys.exit(1)
 hw = PF.hardware(cur)
-target = hw["fits"] if hw["change"] in ("more", "less", "other") else name
+target = hw["target"] if hw["change"] in ("more", "less", "other") else name
 try:
     diff = PF.diff(target)
 except (KeyError, ValueError) as e:

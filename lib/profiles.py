@@ -182,6 +182,10 @@ def fit(prof: dict, f: dict) -> tuple[str | None, list[str]]:
     n = gpu_count(prof)
     if n > 1 and len(matched_gpus(prof, f)) < n:
         return None, [f"for {n} of these cards; this machine has {len(matched_gpus(prof, f))}"]
+    if n > 1 and kind == "exact":
+        other = [g["name"] for g in matched_gpus(prof, f)[:n] if g["name"] not in m.get("gpus", [])]
+        if other:                                    # a mixed pair (an M6000 and an M40): of the family, not tested
+            kind, gpu = "similar", next(g for g in matched_gpus(prof, f)[:n] if g["name"] in other)
     lo, hi = m.get("ram_gib", [0, 10**6])
     if not lo <= f["ram_gib"] < hi:
         return None, [f"for {lo} to {hi} GiB of RAM; this machine has {f['ram_gib']}"]
@@ -190,8 +194,9 @@ def fit(prof: dict, f: dict) -> tuple[str | None, list[str]]:
     return kind, why
 
 
-def suggest(f: dict | None = None) -> tuple[str | None, str, list[str]]:
-    """The best profile for this machine: (name, "exact"/"similar"/"none", reasons)."""
+def suggest(f: dict | None = None, max_cards: int | None = None) -> tuple[str | None, str, list[str]]:
+    """The best profile for this machine: (name, "exact"/"similar"/"none", reasons); with `max_cards`, of the profiles
+    that run on no more cards than that."""
     f = f or facts()
     if not f["gpus"]:
         return None, "none", ["no NVIDIA GPU found: is the NVIDIA driver installed? (`nvidia-smi` should list the card)"]
@@ -204,15 +209,16 @@ def suggest(f: dict | None = None) -> tuple[str | None, str, list[str]]:
         except (KeyError, ValueError) as e:              # a broken profile file: say so, and go on
             reasons.append(f"{n}: cannot be read ({str(e).strip(chr(39))})")
             continue
-        if kind:
+        if kind and (max_cards is None or gpu_count(prof) <= max_cards):
             found[kind].append((gpu_count(prof), n, why))
         else:
             reasons += [f"{n}: {w}" for w in why]
-    # an exact fit first; of those, the one that uses the most of this machine's cards (a second card is used)
-    for kind in ("exact", "similar"):
-        if found[kind]:
-            _, n, why = max(found[kind], key=lambda x: x[0])
-            return n, kind, why
+    # the profile that uses the most of this machine's cards (a second card is used, even when it is only of the same
+    # family: an M6000 and an M40), then an exact fit before a similar one; max() keeps the first of equals (RAM order)
+    pool = [(cards, kind == "exact", n, why, kind) for kind in ("exact", "similar") for cards, n, why in found[kind]]
+    if pool:
+        _, _, n, why, kind = max(pool, key=lambda x: (x[0], x[1]))
+        return n, kind, why
     return None, "none", reasons
 
 
@@ -371,61 +377,70 @@ def _ram_low(name: str) -> int:
 def hardware(cfg: dict | None = None, f: dict | None = None) -> dict:
     """The profile presets.json came from against the one that fits this machine now.
 
-    change: "none" (it still fits), "more" (more RAM: a bigger profile fits), "less" (less RAM: its presets may no
-    longer fit), "other" (another GPU), or "unknown" (no profile fits, or no presets.json yet).  `message` says it in
-    words, for the console's alert and StartOS's task; `download_gb` is what taking the profile that fits downloads."""
+    change: "none" (it still fits), "more" (more RAM or a second card: a bigger profile fits, offered), "less" (less RAM,
+    or fewer cards than the profile runs on: its presets may not fit or start, so follow() moves to `target` by itself),
+    "other" (another GPU, offered), or "unknown" (no profile fits, or no presets.json yet).  `fits` is the best profile
+    for this machine; `target` the one to take now: `fits`, except after less RAM, where it uses no more cards than
+    before (a second card is only ever offered).  `message` says it in words, for the console's alert and StartOS's
+    task; `download_gb` is what taking `target` downloads."""
     cfg = current() if cfg is None else cfg
     f = f or facts()
     cur = ((cfg or {}).get("profile") or {}).get("name")
     fits, kind, why = suggest(f)
-    out = {"profile": cur, "fits": fits, "ram_gib": f.get("ram_gib"), "change": "none", "message": "", "download_gb": 0,
-           "new_packs": []}
+    out = {"profile": cur, "fits": fits, "target": fits, "ram_gib": f.get("ram_gib"), "change": "none", "message": "",
+           "download_gb": 0, "new_packs": []}
     if not cur or not fits:
         out["change"] = "unknown"
         out["message"] = "; ".join(why[:3]) if not fits else ""
         return out
     try:
-        still = fit(compose(cur), f)[0]
+        cp = compose(cur)
     except (KeyError, ValueError):
-        still = None                                  # a profile this version no longer has
-    try:
-        more_cards = gpu_count(compose(fits)) > gpu_count(compose(cur))
-        fewer_cards = gpu_count(compose(fits)) < gpu_count(compose(cur))
-    except (KeyError, ValueError):
-        more_cards = fewer_cards = False
-    if fits == cur or (still and not more_cards):
+        cp = None                                     # a profile this version no longer has
+    fp = compose(fits)
+    cur_cards = gpu_count(cp) if cp else 1
+    have = len(matched_gpus(cp or fp, f))             # this machine's cards of the kind the profiles are for
+    still = cp is not None and fit(cp, f)[0]
+    if fits == cur or (still and gpu_count(fp) <= cur_cards):
         return out
-    try:
-        gpu_same = bool(matched_gpu(compose(cur), f))
-        lower = _ram_low(fits) < _ram_low(cur)
-    except (KeyError, ValueError):
-        gpu_same, lower = True, False
-    # fewer cards than the profile runs on: like less RAM, its presets cannot start, so the move is made by itself
-    out["change"] = ("other" if not gpu_same else "less" if (lower or fewer_cards) else "more")
-    try:
-        out["cards"] = {"profile": gpu_count(compose(cur)), "fits": gpu_count(compose(fits))}
-    except (KeyError, ValueError):                    # a profile this version no longer has
-        out["cards"] = {"profile": 1, "fits": gpu_count(compose(fits))}
-    newp = compose(fits)["profile"]
-    keep = wanted_packs({**(cfg or {}), "profile": {"name": fits}, "presets": compose(fits).get("presets", {})})
+    gpu_same = cp is None or bool(matched_gpu(cp, f))
+    lower = cp is not None and _ram_low(fits) < _ram_low(cur)
+    target = fits
+    if not still and gpu_same and have < cur_cards:
+        out["change"] = "less"                        # a card taken out, or failed: the split cannot start
+    elif not still and gpu_same and lower:
+        out["change"] = "less"
+        if gpu_count(fp) > cur_cards:                 # never a second card by itself: the best fit with as many as before
+            target = suggest(f, max_cards=cur_cards)[0] or fits
+    elif not gpu_same:
+        out["change"] = "other"
+    else:
+        out["change"] = "more"
+    out["target"] = target
+    tp = compose(target)
+    out["cards"] = {"profile": cur_cards, "fits": gpu_count(fp), "target": gpu_count(tp), "machine": have}
+    keep = wanted_packs({**(cfg or {}), "profile": {"name": target}, "presets": tp.get("presets", {})})
     out["new_packs"] = [p for p in keep if not pack_ready(p)]
-    out["download_gb"] = disk_need_gb({"profile": {"name": fits}}, out["new_packs"]) - BASE_GB if out["new_packs"] else 0
-    title = newp.get("title", fits)
-    if out["change"] == "less" and fewer_cards:
-        out["message"] = (f"This server now has fewer than the {out['cards']['profile']} cards profile {cur} runs on: "
-                          f"profile {fits} ({title}) fits it.")
+    out["download_gb"] = disk_need_gb({"profile": {"name": target}}, out["new_packs"]) - BASE_GB if out["new_packs"] else 0
+    title = tp["profile"].get("title", target)
+    presets = ", ".join(tp.get("presets", {}))
+    dl = f" It downloads {out['download_gb']} GB ({', '.join(out['new_packs'])})." if out["new_packs"] else ""
+    if out["change"] == "less" and have < cur_cards:
+        out["message"] = (f"This server now has {have} of the {cur_cards} cards profile {cur} runs on: profile {target} "
+                          f"({title}) fits it.{dl}")
     elif out["change"] == "less":
         out["message"] = (f"This server now has {f['ram_gib']} GiB of RAM, less than profile {cur} is for: profile "
-                          f"{fits} ({title}) fits it, and its presets fit in this RAM.")
-    elif out["change"] == "more" and more_cards:
-        out["message"] = (f"This server now has {gpu_count(compose(fits))} cards: hardware profile {fits} ({title}) "
-                          f"runs on both, with presets {', '.join(compose(fits).get('presets', {}))}. Outcrop keeps "
-                          f"{cur} until you apply it.")
+                          f"{target} ({title}) fits it, and its presets fit in this RAM.{dl}")
     elif out["change"] == "more":
-        dl = f" It downloads {out['download_gb']} GB ({', '.join(out['new_packs'])})." if out["new_packs"] else ""
-        out["message"] = (f"This server now has {f['ram_gib']} GiB of RAM: hardware profile {fits} ({title}) fits it, "
-                          f"with presets {', '.join(compose(fits).get('presets', {}))}. Outcrop keeps {cur} until you "
-                          f"apply it.{dl}")
+        what = []
+        if gpu_count(fp) > cur_cards:
+            what.append(f"{have} cards")
+        if cp is not None and _ram_low(fits) != _ram_low(cur):
+            what.append(f"{f['ram_gib']} GiB of RAM")
+        fewer = (f" It runs on {gpu_count(fp)} of the {have} cards (no profile for {have} at this RAM yet)."
+                 if gpu_count(fp) < have else "")
+        out["message"] = (f"This server now has {' and '.join(what) or 'new hardware'}: hardware profile {fits} ({title}) "
+                          f"fits it, with presets {presets}. Outcrop keeps {cur} until you apply it.{fewer}{dl}")
     else:
         out["message"] = (f"This server's GPU is not the one profile {cur} was made for: {fits} ({title}) fits it. "
                           f"Outcrop keeps {cur} until you apply it.")
@@ -461,7 +476,7 @@ def follow(f: dict | None = None) -> dict:
     h = hardware(None, f)
     if h["change"] != "less":
         return h
-    moved = change_to(h["fits"])
+    moved = change_to(h["target"])
     rec = {**moved, "ram_gib": f.get("ram_gib"), "at": dt.datetime.now().isoformat(timespec="seconds")}
     STATE.mkdir(parents=True, exist_ok=True)
     HARDWARE_FILE.write_text(json.dumps(rec, indent=1) + "\n", encoding="utf-8")
@@ -469,8 +484,8 @@ def follow(f: dict | None = None) -> dict:
     gone = f" Presets no longer offered: {', '.join(moved['presets_gone'])}." if moved["presets_gone"] else ""
     h["moved"] = rec
     cards = h.get("cards") or {}
-    why = (f"This server now has fewer than the {cards['profile']} cards profile {moved['from']} runs on"
-           if cards.get("fits", 1) < cards.get("profile", 1) else
+    why = (f"This server now has {cards.get('machine')} of the {cards['profile']} cards profile {moved['from']} runs on"
+           if cards.get("machine", 1) < cards.get("profile", 1) else
            f"This server now has {f.get('ram_gib')} GiB of RAM, less than profile {moved['from']} is for")
     h["message"] = (f"{why}: Outcrop "
                     f"moved to {moved['to']} ({compose(moved['to'])['profile'].get('title', '')}){words}.{gone} Your "

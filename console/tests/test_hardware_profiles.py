@@ -256,6 +256,37 @@ def test_a_card_added_is_offered_and_a_card_removed_moves_back(home, monkeypatch
     assert P.current()["common"]["gpu"] == [0, 1]
     h = P.follow(machine(63))                                  # a card taken out, or failed
     assert h["change"] == "less" and h["moved"]["to"] == "m6000-64g"
-    assert "fewer than the 2 cards" in h["message"]
+    assert "1 of the 2 cards" in h["message"]
     c = P.current()
     assert "gpu" not in c["common"] and (home / "state" / "default_preset").read_text().strip() == "quality"
+
+
+def test_a_second_card_is_never_taken_up_or_dropped_by_itself(home, monkeypatch):
+    """Two cards with more RAM than any two-card profile is for: offered (the bigger one-card profile), never applied;
+    less RAM while a second card appeared: the move keeps to one card, and the two-card profile is offered after."""
+    monkeypatch.setattr(P, "facts", lambda: two(126))
+    P.apply("m6000x2-128g")
+    h = P.follow(two(250))
+    assert h["change"] == "more" and "moved" not in h and P.current()["profile"]["name"] == "m6000x2-128g"
+    assert "runs on 1 of the 2 cards" in h["message"]
+    install(home, "m6000-128g", 126, monkeypatch=monkeypatch)
+    h = P.follow(two(63))
+    assert h["change"] == "less" and h["moved"]["to"] == "m6000-64g" and "gpu" not in P.current()["common"]
+    h = P.follow(two(63))
+    assert (h["change"], h["target"]) == ("more", "m6000x2-64g")
+
+
+def test_the_offer_names_every_change_and_the_download(home, monkeypatch):
+    install(home, "m6000-32g", 31, monkeypatch=monkeypatch)
+    h = P.hardware(None, two(63))
+    assert "2 cards and 63 GiB of RAM" in h["message"] and "downloads" in h["message"] and h["new_packs"]
+
+
+def test_a_mixed_pair_uses_both_cards_as_untested():
+    M40 = {**M6000, "name": "Tesla M40 24GB", "index": "1", "uuid": "GPU-4"}
+    f = {**machine(63), "gpus": [M6000, M40]}
+    n, kind, why = P.suggest(f)
+    assert (n, kind) == ("m6000x2-64g", "similar") and "not tested" in why[0]
+    other = {**M6000, "name": "NVIDIA GeForce RTX 3090", "uuid": "GPU-5"}
+    f = {**machine(63), "gpus": [other, {**M6000, "index": "1"}]}
+    assert P.suggest(f)[0] == "m6000-64g"                     # one M6000 beside another GPU: the one-card profile

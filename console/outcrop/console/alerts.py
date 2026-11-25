@@ -387,8 +387,8 @@ class Alerts:
         if h["change"] in ("more", "other", "less"):      # less: on Ubuntu (StartOS moves at the start, before this)
             how = ("run Update hardware settings under Outcrop's actions in StartOS"
                    if os.environ.get("OUTCROP_PLATFORM") == "startos" else
-                   f"run `outcrop profile apply {h['fits']}`" if h["change"] == "less" else
-                   f"run `outcrop profile apply {h['fits']}`, then `./setup.sh` in the Outcrop folder to download what it needs")
+                   f"run `outcrop profile apply {h.get('target') or h['fits']}`" if h["change"] == "less" else
+                   f"run `outcrop profile apply {h.get('target') or h['fits']}`, then `./setup.sh` in the Outcrop folder to download what it needs")
             self.open("hardware", "hardware:fits", f"{h['message']} To use it, {how}.",
                       {"profile": h["profile"], "fits": h["fits"], "ram_gib": h["ram_gib"], "change": h["change"]},
                       level="error" if h["change"] == "less" else None)
