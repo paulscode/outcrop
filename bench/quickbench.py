@@ -61,7 +61,7 @@ def run(prompt, marker):
     t0 = time.monotonic()
     first = None
     text, timings, usage = [], {}, {}
-    with urllib.request.urlopen(req, timeout=1800) as r:
+    with urllib.request.urlopen(req, timeout=7200) as r:      # a 190K-token prompt on a slow card: up to an hour
         for raw in r:
             if not raw.startswith(b"data: ") or raw.startswith(b"data: [DONE]"):
                 continue
