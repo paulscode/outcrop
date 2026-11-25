@@ -174,17 +174,23 @@ def cmd_status(_):
         k = SP.api_key(c)
         print(f"{B}Access:{X}   {'API key required' if k not in ('none', '', None) else Y + 'no API key (open to the LAN)' + X}"
               f"{D}; the gateway is not enabled{X}")
-    # one line per card; with several, the one presets.json names (lib/profiles.py), else the first
-    want = str((SP.load().get("common") or {}).get("env", {}).get("CUDA_VISIBLE_DEVICES", "")) if SP.PRESETS_FILE.exists() else ""
-    rows = [r.split(", ") for r in LC.out(["nvidia-smi", "--query-gpu=uuid,memory.used,memory.total,temperature.gpu,power.draw,clocks.sm",
+    # the card(s) the engine uses: a two-card profile's "gpu" (nvidia-smi's numbers), else the one presets.json pins
+    # (lib/profiles.py), else the first
+    common = (SP.load().get("common") or {}) if SP.PRESETS_FILE.exists() else {}
+    want = str((common.get("env") or {}).get("CUDA_VISIBLE_DEVICES", ""))
+    cards = [str(i) for i in (common.get("gpu") or [])]
+    rows = [r.split(", ") for r in LC.out(["nvidia-smi", "--query-gpu=uuid,memory.used,memory.total,temperature.gpu,power.draw,clocks.sm,index",
                                            "--format=csv,noheader,nounits"]).splitlines()]
-    g = next((r for r in rows if len(r) == 6 and r[0] == want), next((r for r in rows if len(r) == 6), None))
-    if g:
+    rows = [r for r in rows if len(r) == 7]
+    shown = ([r for r in rows if r[6] in cards] if cards else
+             [next((r for r in rows if r[0] == want), rows[0] if rows else None)])
+    for g in [r for r in shown if r]:
         try:
             watts = f"{float(g[4]):.0f} W"
         except ValueError:                               # "[N/A]" on some cards
             watts = "power n/a"
-        print(f"{B}GPU:{X}      {g[1]} / {g[2]} MiB, {g[3]} C, {watts}, {g[5]} MHz")
+        label = f"GPU {g[6]}:" if len(shown) > 1 else "GPU:"
+        print(f"{B}{label:9s}{X} {g[1]} / {g[2]} MiB, {g[3]} C, {watts}, {g[5]} MHz")
     mem = {k: int(v.split()[0]) for k, v in (ln.split(":", 1) for ln in open("/proc/meminfo")) if k in ("MemTotal", "MemAvailable")}
     print(f"{B}RAM:{X}      {(mem['MemTotal'] - mem['MemAvailable']) / 2**20:.0f} GiB used of {mem['MemTotal'] / 2**20:.0f} GiB")
     cmd_connect(None, short=True)

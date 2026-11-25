@@ -153,15 +153,25 @@ class Live:
             import pynvml as N
             N.nvmlInit()
             self.nvml = N
-            # the card the engine uses: presets.json names it when the machine has more than one (lib/profiles.py)
+            # the card(s) the engine uses: presets.json names them when the machine has more than one (lib/profiles.py):
+            # a two-card profile's "gpu" (nvidia-smi's numbers), else the one-card pin's UUID
             try:
-                gpu = str((config.load_presets().get("common") or {}).get("env", {}).get("CUDA_VISIBLE_DEVICES", ""))
+                common = config.load_presets().get("common") or {}
             except (OSError, ValueError):
-                gpu = ""
+                common = {}
+            gpu = str((common.get("env") or {}).get("CUDA_VISIBLE_DEVICES", ""))
+            cards = [i for i in (common.get("gpu") or []) if isinstance(i, int) and not isinstance(i, bool)]
             try:
-                h = N.nvmlDeviceGetHandleByUUID(gpu) if gpu.startswith("GPU-") else N.nvmlDeviceGetHandleByIndex(0)
+                h = (N.nvmlDeviceGetHandleByIndex(cards[0]) if cards else
+                     N.nvmlDeviceGetHandleByUUID(gpu) if gpu.startswith("GPU-") else N.nvmlDeviceGetHandleByIndex(0))
             except N.NVMLError:                          # that card is gone (swapped): the first one, as before
                 h = N.nvmlDeviceGetHandleByIndex(0)
+            self._gpus_more = []                         # the other cards of a two-card profile: temperature and limits
+            for i in cards[1:]:
+                try:
+                    self._gpus_more.append((i, N.nvmlDeviceGetHandleByIndex(i)))
+                except N.NVMLError:
+                    pass
             name = N.nvmlDeviceGetName(h)
             # A GB10 shares the system's memory with the CPU: NVML has no memory figures for it ("Not Supported")
             mem = _try(lambda: N.nvmlDeviceGetMemoryInfo(h))
@@ -237,6 +247,25 @@ class Live:
                 self._hidden_key, self._ours_on_gpu = hidden, _gpu_holders()
             _name_hidden(procs, self._ours_on_gpu)
         g["procs"] = procs
+        if getattr(self, "_gpus_more", None):
+            # two cards: one line per card, and the hotter card's temperature and every card's limits for the alerts
+            cards = [{"index": None, "temp": g.get("temp"), "power": g.get("power"), "util": g.get("util"),
+                      "throttle": g.get("throttle")}]
+            for i, hh in self._gpus_more:
+                t = _try(lambda hh=hh: N.nvmlDeviceGetTemperature(hh, N.NVML_TEMPERATURE_GPU))
+                pw = _try(lambda hh=hh: N.nvmlDeviceGetPowerUsage(hh))
+                uu = _try(lambda hh=hh: N.nvmlDeviceGetUtilizationRates(hh))
+                rr = _try(lambda hh=hh: N.nvmlDeviceGetCurrentClocksThrottleReasons(hh))
+                cards.append({"index": i, "temp": t, "power": round(pw / 1000.0, 1) if pw is not None else None,
+                              "util": uu.gpu if uu is not None else None,
+                              "throttle": _throttle_names(N, rr) if rr is not None else None})
+            g["cards"] = cards
+            temps = [c["temp"] for c in cards if c["temp"] is not None]
+            if temps:
+                g["temp"] = max(temps)
+            names_ = sorted({n for c in cards for n in (c["throttle"] or [])})
+            if any(c["throttle"] is not None for c in cards):
+                g["throttle"] = names_
         if g.get("power") is not None:
             last = getattr(self, "_last_power_t", None)
             if last is not None:
