@@ -6,7 +6,8 @@
 # llama.cpp has the cards to itself; `outcrop start` brings the boot preset back afterwards (DONE=1, or by hand).
 #   server: starts llama-server on 127.0.0.1:18090 in the container, waits until it answers, records each card's memory
 #           and the server's own memory lines, runs bench/quickbench.py (chat, code, story, 4K document, 3 runs each;
-#           CASES and REPEAT change that) and bench/qualgate.py against it, then stops it
+#           CASES and REPEAT change that), bench/concurrent.py with STREAMS="1,2,4" (for -np 4), and bench/qualgate.py
+#           against it, then stops it
 #   bench:  runs llama-bench with the options given (-p / -n / -d / -sm ...), JSON out
 # MODEL is a file in DENSE_DIR (default /mnt/models/dense, on the models volume), and llama.cpp's binaries are in
 # $DENSE_DIR/bin (built for sm_52 elsewhere: they need nothing but the container's CUDA libraries).
@@ -63,6 +64,10 @@ mem=$(on "$A sh -c 'grep -E \"model buffer size|KV buffer size|compute buffer si
 on "$A python3 - --url http://127.0.0.1:18090 --cases ${CASES:-chat,code,story,doc4k} --repeat ${REPEAT:-3} --json /tmp/dense-qb.json" \
   < "$HERE/quickbench.py" | grep -vE '^\s*$' | tail -8
 qb=$(on "$A cat /tmp/dense-qb.json")
+if [ -n "${STREAMS:-}" ]; then          # several conversations at once (llama-server -np N): bench/concurrent.py
+  on "$A python3 - --url http://127.0.0.1:18090 --streams $STREAMS --rounds 3 --json /tmp/dense-cc.json" \
+    < "$HERE/concurrent.py" | grep stream
+fi
 qual=$(on "$A python3 - --url http://127.0.0.1:18090" < "$HERE/qualgate.py" 2>&1 | tail -1 || true)
 echo "$qual"
 python3 - "$OUT" "$NAME" "$MODEL" "$OPTS" "$load_s" "$vram" "$mem" "$qb" "$qual" <<'PY'

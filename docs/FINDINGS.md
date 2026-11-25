@@ -439,3 +439,53 @@ killed. Outcrop now counts every slot's attention cache (about 12.4 GiB per mill
 The helper is slower than one card (every layer waits for its results through RAM). The peer tier answers chat a
 little faster than the split and reads short prompts faster; the split reads long prompts much faster and answers
 documents faster, so the two-card profiles use the split.
+
+## A dense model on the same two M6000s: Qwen3.8-27B through llama.cpp (2026-11-25)
+
+For comparison with Qwen3.8-Flash-Next (125B parameters, 6B active per token) on Strata: Qwen3.8-27B (dense, all 27B
+parameters work on every token) through llama.cpp, master `244640b`, built for the M6000 (CUDA 12.9, `sm_52`, AVX2), on
+the same server under StartOS with Outcrop's engine stopped (`bench/startos-dense.sh`). Two quantizations: Q8_0
+(ggml-org, 28.6 GB: does not fit one card) and UD-Q6_K (unsloth, 22.0 GB: just fits one), with ggml-org's MTP draft
+layer. Flash attention on; decode in tokens a second (chat / code / story / 4K document, `bench/quickbench.py`). Every
+configuration passed `bench/qualgate.py`, the tensor split included.
+
+**One card against two.** llama.cpp's `-sm tensor` has both cards work on every layer (through NCCL, run with
+`NCCL_P2P_DISABLE=1`: the cards' direct path is broken on this machine); `-sm layer` gives each card half the layers;
+`-sm row` failed to load ("device CUDA0 does not support split buffers").
+
+| | Decode | 4K prompt | Longest context that fits |
+|---|---|---|---|
+| Q6_K, one card | 7.5 / 7.5 / 7.5 / 7.3 | 75 tok/s | 53,760 tokens (90,368 with an 8-bit attention cache) |
+| Q6_K, one card + the 4-bit MTP layer | 11.3 / 14.1 / 9.4 / 12.6 | 73 | 47,872 (8-bit cache) |
+| Q8_0, one card + CPU (48 of its layers on the card) | 4.4 (llama-bench) | 66 (pp512) | |
+| Q6_K, two cards, `-sm layer` | 8.3 (llama-bench) | 85 (pp512) | |
+| Q6_K, two cards, `-sm tensor` | 12.3 / 12.3 / 12.3 / 12.1 | 134 | 262,144 (the model's own) |
+| Q8_0, two cards, `-sm tensor` | 12.6 / 12.6 / 12.6 / 12.4 | 129 | 262,144, with a full-precision cache |
+| Q8_0, two cards, `-sm tensor` + MTP (3 tokens) | 23.9 / 28.2 / 18.1 / 26.1 | 125 | 262,144 |
+| Q6_K, two cards, `-sm tensor` + MTP (3 tokens) | 19.4 / 23.6 / 15.3 / 21.2 | 130 | 262,144 |
+
+- The tensor split is what two cards give a dense model: 1.6 to 1.8 times one card's decode and prompts, and the
+  model's full context at Q8_0; the layer split only adds room (8.3 against 7.6).
+- The MTP draft layer doubles decode (drafts accepted 67 to 100% of the time); 4-token drafts were slower than 3. With
+  drafts, Q8_0 is faster than Q6_K (the K-quant costs more to unpack on Maxwell).
+- One card decodes at about a third of the card's memory-bandwidth limit for 22 GB (317 GB/s: about 14 tok/s).
+
+**Long prompts** (read in tokens a second; the time to the first word; decode after it):
+
+| | 16K tokens | 48K tokens | 190K tokens |
+|---|---|---|---|
+| Q6_K, one card (8-bit cache) | 69 (4 min), 6.0 | 57 (14 min), 4.4 | does not fit |
+| Q8_0, two cards, tensor | 121 (2.2 min), 11.8 | 103 (7.7 min), 10.6 | 62 (52 min), 7.1 |
+| Q8_0, two cards, tensor + MTP | 117, 22.9 | 99, 19.5 | |
+| Flash-Next `quality-1m`, two cards (above) | | 310 (2.6 min) | 313 (10 min), 41.8 |
+
+**Several conversations at once** (`-np 4`, 32,768 tokens each, Q8_0 on two cards, the total over all): 12.1 / 22.8 /
+32.8 tok/s for 1 / 2 / 4 at once without drafts (9 each at 4); with MTP 22.0 / 23.7 / 15.0, so drafts suit one
+conversation at a time. Flash-Next on the same cards: 37.8 / 38.6 / 52.2.
+
+**Against Flash-Next on the same hardware**, the dense 27B model writes 2 to 3 times slower (one card: 7.5 against 40
+to 46; two cards with drafts: 18 to 28 against 31 to 60), reads long prompts 3 to 5 times slower, and serves four
+users at about 60% of Flash-Next's total. What it offers instead: it needs no RAM to speak of (both quants live in
+VRAM; Flash-Next wants 32 GB or more, and 64 GB for its best pack), and Q8_0 keeps the model's full 262K context on
+two cards. Their answer quality was not compared here (Flash-Next's packs score 89.1 to 93.3 on ISTA-DASLab's task
+average; no matching figure for these 27B quants).
