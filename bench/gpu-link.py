@@ -21,6 +21,7 @@ import time
 ap = argparse.ArgumentParser()
 ap.add_argument("--mib", type=int, default=256)
 ap.add_argument("--reps", type=int, default=8)
+ap.add_argument("--no-peer", action="store_true", help="never enable peer access: card-to-card copies go through RAM")
 a = ap.parse_args()
 SIZE = a.mib << 20
 
@@ -135,7 +136,7 @@ if n > 1:
                 continue
             can = ctypes.c_int()
             rt.cudaDeviceCanAccessPeer(ctypes.byref(can), s, d)
-            if can.value:
+            if can.value and not a.no_peer:
                 rt.cudaSetDevice(s)
                 rt.cudaDeviceEnablePeerAccess(d, 0)
                 rt.cudaGetLastError()
@@ -148,7 +149,7 @@ if n > 1:
                 return time.perf_counter() - t
 
             v = gbs(best(p2p))
-            peer.append({"from": s, "to": d, "direct": bool(can.value), "GBps": v})
+            peer.append({"from": s, "to": d, "direct": bool(can.value) and not a.no_peer, "GBps": v})
             out({"test": "card_to_card", "from": s, "to": d, "can_access_peer": bool(can.value), "GBps": v})
 
 print("\nSummary (GB/s; PCIe 3.0 x16 gives about 12-13 in practice, x8 about 6-6.5):")
