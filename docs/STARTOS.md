@@ -92,7 +92,8 @@ profile is applied again. Before every start, Outcrop compares it with the profi
   profile made for more RAM can promise more than fits (a bigger conversation cache, the million-token presets). It
   needs no download. Your settings are kept; a boot preset the smaller profile does not have becomes its default. A
   notification and an alert in the console say what changed.
-- **More RAM, or another GPU**: a task on Outcrop's page offers the profile that fits, and the console shows an alert
+- **A card taken out of a two-card server** is handled the same way: Outcrop moves to the one-card profile.
+- **More RAM, a second card, or another GPU**: a task on Outcrop's page offers the profile that fits, and the console shows an alert
   (on Telegram too, if you use it). **Update hardware settings** takes it: what it downloads, if anything (the 64 GB
   profile adds the `quality` pack, about 110 GB), comes at the next start, which the action does for you.
 

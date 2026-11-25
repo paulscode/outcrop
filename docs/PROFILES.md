@@ -21,9 +21,12 @@ outcrop profile apply m6000-64g # do it (the old presets.json is kept as a .bak 
 | --- | --- | --- | --- | --- |
 | `m6000-32g` | 24 to 47 GB | Q2_0, IQ3_XXS | `speed` | yes, on a 32 GB machine (2026-11-18) |
 | `m6000-64g` | 48 to 95 GB | Q2_0, IQ3_XXS, IQ3_S | `balanced` | yes, with RAM held to 64 GB (2026-11-18) |
-| `m6000-128g` | 96 to 191 GB | Q2_0, IQ3_XXS, IQ3_S, and the 1M-token presets | `quality` | not yet |
+| `m6000-128g` | 96 to 191 GB | Q2_0, IQ3_XXS, IQ3_S, and the 1M-token presets | `quality` | yes, under StartOS (2026-11-24) |
 | `m6000-256g` | 192 GB and more | as 128g, with a bigger conversation cache | `quality` | the reference system ([FINDINGS.md](FINDINGS.md)) |
 | `gb10-128g` | 110 to 139 GB, unified | IQ3_S | `quality` (262K context) | yes, on an ASUS Ascent GX10 under StartOS (2026-11-22) |
+| `m6000x2-32g` | two cards, 24 to 47 GB | as `m6000-32g` | `speed` | yes, under StartOS (2026-11-25) |
+| `m6000x2-64g` | two cards, 48 to 95 GB | as `m6000-64g` | `balanced` | yes, under StartOS (2026-11-25) |
+| `m6000x2-128g` | two cards, 96 to 191 GB | as `m6000-128g` | `quality` | yes, under StartOS (2026-11-25) |
 
 Each profile's `"tested"` field says on what machine and when it was checked; `null` means not yet. The Tesla M40 24 GB
 is the same chip as the M6000 and is listed as similar: setup suggests the matching profile with a note that it has not
@@ -52,13 +55,23 @@ What changes with RAM, and why:
 - **The 1M-token presets.** Beyond 262K tokens of context, the attention cache past what stays in VRAM is pinned in RAM:
   about 12 GiB at a million tokens, on top of the experts. Only the 128g and 256g profiles offer them.
 
+## Two cards
+
+With two M6000s (or M40s), the `m6000x2-` profiles run every preset on both: Strata's layer split, about half the
+layers on each card with its own expert cache and attention cache, and `--pipeline-windows 2`, which starts the next
+step on the first card while the second checks the drafts. The cards hand over through RAM, so a direct link between
+them is not needed. Measured on one machine ([FINDINGS.md](FINDINGS.md)): with 32 GB the second card is mostly a second
+expert cache (`balanced` 14 to 23% faster, the disk no longer read while answering); with every RAM size, prompts of
+16K tokens and more are read 34 to 85% faster and code and documents are answered up to 31% faster, while free-form
+writing gains little. A preset can name its cards itself (`"gpu": [0]` runs it on the first card alone).
+
 ## When the hardware changes
 
 presets.json keeps the profile it was made from until one is applied again, so adding RAM changes nothing by itself.
 `outcrop profile` shows the profile that fits now beside the one presets.json came from, and the console raises an
-alert (the **hardware** rule, on Telegram too) when they differ: with more RAM or another GPU it names the profile to
-apply (`outcrop profile apply NAME`, then `./setup.sh` downloads any pack it adds); with less RAM it says so as an
-error, since a profile made for more RAM can promise more than fits. On StartOS, the move to a smaller profile is made
+alert (the **hardware** rule, on Telegram too) when they differ: with more RAM, a second card or another GPU it names
+the profile to apply (`outcrop profile apply NAME`, then `./setup.sh` downloads any pack it adds); with less RAM it says so as an
+error, since a profile made for more RAM, or for two cards, can promise more than fits. On StartOS, the move to a smaller profile is made
 by itself before every start, and the **Update hardware settings** action takes a bigger one ([STARTOS.md](STARTOS.md)).
 [FINDINGS.md](FINDINGS.md) has what each RAM size gave on one server.
 
@@ -108,6 +121,7 @@ profile itself.
 | `match.ram_gib` | `[low, high)`: the RAM sizes the profile is for, in GiB as the system reports it |
 | `match.arch` | CPU architectures, as `uname -m` prints them (`aarch64`); any when absent |
 | `match.memory` | `discrete` (the default: the GPU has its own VRAM) or `unified` (one memory for both, as on a GB10) |
+| `match.gpu_count` | How many of those cards the profile runs on (default 1). With two, the profile is preferred over the one-card profile of the same RAM, and its presets run on the first two matching cards (`common.gpu`, set when the profile is applied) |
 | `packs` | The model packs setup downloads and prepares: `q2_0`, `iq3_xxs`, `iq3_s`, `iq2_xs` |
 | `default_preset` | The preset started at boot |
 | `tested` | When and on what machine it was checked, or `null` |

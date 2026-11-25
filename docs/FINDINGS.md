@@ -369,3 +369,73 @@ the RAM less 1 GiB, which is the RAM the engine counts on.
 - **Uneven channels cost nothing measurable:** three and six sticks (one channel with one more than another) ran as fast
   as four and eight, so a machine can grow one stick at a time.
 - About 3 to 9% under the profiles' figures from the reference system, a newer CPU, at the same RAM.
+
+## Two Quadro M6000s, from 32 to 128 GB of RAM, on StartOS (2026-11-25)
+
+The same Dell Precision T5810 (Xeon E5-2699 v3, DDR4-2133), now with two Quadro M6000 24 GB on PCIe 3.0 x16 each, an
+825 W supply and an NVMe drive, under StartOS 0.4.2.1 with Strata at the commit Outcrop pins. Decode in tokens a second
+(chat / code / story / 4K document, `bench/quickbench.py`, median of 3), prompts read in tokens a second; every
+configuration passed `bench/qualgate.py`. No one had published two-Maxwell results; the closest, two Tesla P40s on the
+same CPU, ran IQ3_S at 35.0 tok/s decode and read 4K / 22K prompts at 350 / 558 tok/s (Strata's community results).
+
+**The link.** Each card reaches RAM at 10.8 GB/s (11.3 back), 10.3 / 10.8 with both busy: full x16 each, and the NVMe
+adapter takes nothing from them. The driver reports peer access between the cards, but direct copies ran at 0.31 GB/s,
+and Strata's own test copy arrived wrong (the cards meet only at the CPU's host bridge, with the IOMMU on): direct
+transfers are broken here, so everything goes through RAM, at 10.2 GB/s card to card.
+
+**One conversation**, Strata's layer split (`"gpu": [0, 1]`, about half the layers per card) with and without
+`--pipeline-windows 2` (the next step starts on the first card while the second checks the drafts):
+
+| RAM | Preset | One card | Two cards | Two cards + pipeline windows |
+|---|---|---|---|---|
+| 32 GB | `speed` | 41.2 / 45.9 / 32.7 / 40.2 | 44.2 / 50.8 / 35.5 / 42.5 | 46.2 / 60.0 / 35.9 / 45.9 |
+| 32 GB | `balanced` | 32.1 / 33.9 / 27.8 / 33.5 (reads 45 GiB from disk) | 36.7 / 41.7 / 32.4 / 38.7 (0.2 GiB) | 40.4 / 49.3 / 31.4 / 41.4 |
+| 64 GB | `speed` | 42.3 / 46.5 / 33.2 / 38.1 | | 46.2 / 58.8 / 33.1 / 46.7 |
+| 64 GB | `balanced` | 39.6 / 40.6 / 29.5 / 34.8 | | 40.3 / 48.2 / 29.4 / 43.1 |
+| 64 GB | `quality` | 35.8 / 38.8 / 29.2 / 34.5 | 37.2 / 41.0 / 30.5 / 37.6 | 39.9 / 47.7 / 29.3 / 39.8 |
+| 128 GB | `quality` | 38.4 / 41.6 / 30.6 / 37.7 | | 39.9 / 48.5 / 31.5 / 41.1 |
+
+- With 32 GB the second card is a second expert cache: the two hold 21,253 experts (86%, about 99.7% of what the model
+  routes to) against 12,356 on one, so `balanced` stops reading the disk while it answers, which one card did with 48 GB.
+- With 64 GB and more every expert is (nearly) in RAM, so the split alone adds 4 to 9%; pipeline windows add the rest.
+  Code and documents gain the most (the drafts are accepted often, so there is more to overlap), free-form writing
+  (the story) 0 to 10%.
+- Moving the draft layer to the first card (`STRATA_MTP_STAGE0=1`) did not help.
+
+**Long prompts**, read in tokens a second (the time to the first word in brackets):
+
+| | One card | Two cards |
+|---|---|---|
+| `balanced`, 32 GB: 16K / 48K tokens | 189 / 181 (87 / 262 s) | 269 / 311 (61 / 153 s) |
+| `quality`, 64 GB: 16K / 48K tokens | 190 / 184 (86 / 259 s) | 255 / 310 (64 / 154 s) |
+| `quality-1m`, 128 GB: 190K tokens | 168 (19 min) | 313 (10 min) |
+
+A 4K prompt is read in one chunk, so only one card works on it (180 to 195 either way). After the 190K-token prompt,
+`quality-1m` answered at 31.9 tok/s on one card; on two, 31.7 with each card keeping 32,768 tokens of its layers'
+attention cache, 37.1 with 131,072, and 41.8 with 131,072 and pipeline windows (the two-card profile's setting).
+
+**Several conversations at once** (`"parallel": 4`, 32,768 tokens each, `speed`; the total over all of them):
+
+| | 1 / 2 / 4 at once, 32 GB | 1 / 2 / 4 at once, 128 GB |
+|---|---|---|
+| One card, one at a time (Outcrop's default) | 35.4 / 35.1 / 32.8 | |
+| One card, 4 slots | 32.9 / 34.2 / 43.1 | 34.7 / 36.9 / 48.3 |
+| Two cards, 4 slots | 37.8 / 37.8 / 50.1 | 37.8 / 38.6 / 52.2 |
+| Two cards, 4 slots, `--batch-mtp --batch-groups 1` | 37.9 / 44.8 / 47.4 | |
+
+Each of four conversations gets 12 to 14 tok/s. Four slots of 262,144 tokens did not fit 32 GB: the attention caches
+in pinned RAM and the experts together ran past StartOS's memory line, and the server stalled until the engine was
+killed. Outcrop now counts every slot's attention cache (about 12.4 GiB per million tokens) before it starts a preset.
+
+**The other ways Strata can use a second card**, `quality` at 128 GB:
+
+| | Decode | 4K / 48K prompts |
+|---|---|---|
+| Helper cache (`--expert-cache-device1 auto`) | 37.0 / 39.0 / 27.8 / 31.0 | 173 / 185 |
+| Peer tier (`--peer-device 1`) | 42.2 / 47.9 / 33.0 / 36.2 | 173 / 184 (its prompt buffers did not fit) |
+| Peer tier, 3 GiB kept free on the peer (`--peer-reserve-mib 3072`) | 42.0 / 47.9 / 30.9 / 39.0 | 229 / 235 |
+| Layer split + pipeline windows (for comparison) | 39.9 / 48.5 / 31.5 / 41.1 | 185 / 321 |
+
+The helper is slower than one card (every layer waits for its results through RAM). The peer tier answers chat a
+little faster than the split and reads short prompts faster; the split reads long prompts much faster and answers
+documents faster, so the two-card profiles use the split.
