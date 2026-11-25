@@ -244,3 +244,17 @@ def test_profile_apply_keeps_settings(tmp_path, monkeypatch):
     SP.set_setting("exact-answers", "on")
     PF.apply("m6000-64g")
     assert json.loads(presets.read_text())["settings"] == {"exact_answers": "on"}
+
+
+def test_validate_presets_checks_gpu():
+    """The editor applies the start's rule for "gpu" (a list of card numbers), in a preset and in "common"."""
+    cfg = json.loads(REF_PRESETS.read_text())
+    cfg["presets"]["quality"]["gpu"] = [0, 1]
+    assert extras.validate_presets(json.dumps(cfg))["ok"]
+    for bad in ("0,1", [], [0, 9]):
+        cfg["presets"]["quality"]["gpu"] = bad
+        r = extras.validate_presets(json.dumps(cfg))
+        assert not r["ok"] and any("gpu is a list" in e for e in r["errors"])
+    cfg["presets"]["quality"].pop("gpu")
+    cfg.setdefault("common", {})["gpu"] = "0"
+    assert not extras.validate_presets(json.dumps(cfg))["ok"]

@@ -85,3 +85,19 @@ def test_more_conversations_at_once_leave_less_for_the_experts(monkeypatch):
         raise AssertionError("not refused")
     except ValueError as e:
         assert "4 conversations of 262,144 tokens" in str(e) and "fewer" in str(e)
+
+
+def test_the_editor_notes_what_a_start_refuses(monkeypatch):
+    """The console's editor checks presets.json while the engine holds RAM of its own: too little RAM for a preset's
+    slots is a note there (strict=False), and only a start refuses it."""
+    monkeypatch.setattr(SP, "mem_available_gib", lambda path=None: 8)
+    p = {"pack": "q2_0", "context": 262144, "parallel": 2}
+    _, _, notes = SP.engine_args(p, {}, strict=False)
+    assert any("counted again when it starts" in n for n in notes)
+    try:
+        SP.engine_args(p, {})
+        raise AssertionError("not refused")
+    except ValueError:
+        pass
+    assert SP.gpu_problem(None) is None and SP.gpu_problem([0, 1]) is None
+    assert all(SP.gpu_problem(g) for g in ("0,1", [], [0, 0], [0, 9], [True]))

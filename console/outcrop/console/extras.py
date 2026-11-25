@@ -588,6 +588,8 @@ def validate_presets(text: str) -> dict:
     check_engine("engine", cfg.get("engine"))
     check_env("common.env", (cfg.get("common") or {}).get("env"))
     check_args("common.args", (cfg.get("common") or {}).get("args"))
+    if SP.gpu_problem((cfg.get("common") or {}).get("gpu")):
+        errors.append(f"common: {SP.gpu_problem((cfg.get('common') or {}).get('gpu'))}")
     if (cfg.get("server") or {}).get("private"):
         errors.append("server.private is for bench/ab.py's own server, not for the running presets")
     if (cfg.get("gateway") or {}).get("enabled") is False:
@@ -620,8 +622,12 @@ def validate_presets(text: str) -> dict:
         if "resident_budget_gib" in p and (not isinstance(p["resident_budget_gib"], int) or p["resident_budget_gib"] < 1):
             errors.append(f"{name}: resident_budget_gib (GiB of experts kept in RAM in low-RAM mode on StartOS) must be "
                           "a whole number, 1 or more")
+        if SP.gpu_problem(p.get("gpu")):
+            errors.append(f"{name}: {SP.gpu_problem(p.get('gpu'))}")
         try:
-            args, env, notes = SP.engine_args(SP.with_settings(p, SP.settings(cfg)), cfg.get("common", {}))
+            # not strict: the RAM a preset's conversation slots need is counted at its start, not against what the running
+            # engine holds while the file is edited
+            args, env, notes = SP.engine_args(SP.with_settings(p, SP.settings(cfg)), cfg.get("common", {}), strict=False)
             rendered[name] = {"args": args, "env": env, "notes": notes}
         except Exception as e:
             errors.append(f"{name}: {type(e).__name__}: {e}")

@@ -251,8 +251,10 @@ def expand(x: str) -> str:
     return x.replace("{outcrop_home}", str(OUTCROP_HOME)).replace("{strata}", str(STRATA))
 
 
-def engine_args(p: dict, top: dict) -> tuple[list[str], dict, list[str]]:
-    """The engine's command line, environment and notes for preset `p`."""
+def engine_args(p: dict, top: dict, strict: bool = True) -> tuple[list[str], dict, list[str]]:
+    """The engine's command line, environment and notes for preset `p`.  `strict` (a start): a preset whose conversation
+    slots leave too little RAM is refused; not strict (the console's editor, while the engine holds RAM of its own),
+    that is a note."""
     pack = p["pack"]
     Q = pack.upper()
     q8 = p.get("q8_dense", top.get("q8_dense", True))
@@ -285,18 +287,25 @@ def engine_args(p: dict, top: dict) -> tuple[list[str], dict, list[str]]:
     need = FULL_ARENA_GIB.get(pack, 60)
     free = mem_available_gib()
     # Several conversations at once ("parallel": Strata's --batch): each slot keeps its whole attention cache in pinned
-    # RAM, the first one inside the reserve below, the others beside the experts.  Counted here so the experts' share
-    # shrinks to fit; refused when what is left is too little to start (4 slots of 262K tokens on 32 GB stalled the
-    # machine for good, two-GPU log 2026-11-25).
-    slots = int(p.get("parallel") or 1)
+    # RAM, the first one inside the reserve below, the others beside the experts.  Counted here before the RAM mode is
+    # chosen: on StartOS the experts' budget shrinks to fit; on Ubuntu the engine sizes its RAM copy itself, so only the
+    # mode follows.  Refused, on both, when what is left is too little to start (4 slots of 262K tokens on 32 GB stalled
+    # a StartOS server for good, 2026-11-25).
+    try:
+        slots = int(p.get("parallel") or 1)
+    except (TypeError, ValueError):
+        raise ValueError(f"parallel must be a whole number, not {p.get('parallel')!r}") from None
     if slots > 1 and ctx > 8192:
         per_slot = ctx * KV_GIB_PER_MTOKEN.get(p.get("kv", "int8"), 2 * KV_GIB_PER_MTOKEN["int8"]) / (1 << 20)
         extra = (slots - 1) * per_slot
         if free - extra < MIN_EXPERTS_GIB + STARTOS_RESERVE_GIB:
-            raise ValueError(f"{slots} conversations of {ctx:,} tokens need about {slots * per_slot:.0f} GiB of RAM for "
-                             f"their attention caches, and {free} GiB is available: too little left for the model. Use "
-                             f"fewer (\"parallel\") or a shorter context (32,768 tokens takes about "
-                             f"{32768 * KV_GIB_PER_MTOKEN['int8'] / (1 << 20):.1f} GiB a conversation)")
+            msg = (f"{slots} conversations of {ctx:,} tokens need about {slots * per_slot:.0f} GiB of RAM for their "
+                   f"attention caches, and {free} GiB is available: too little left for the model. Use fewer "
+                   f"(\"parallel\") or a shorter context (32,768 tokens takes about "
+                   f"{32768 * KV_GIB_PER_MTOKEN['int8'] / (1 << 20):.1f} GiB a conversation)")
+            if strict:
+                raise ValueError(msg)
+            notes.append(msg + " - counted again when it starts, with the RAM free then")
         free -= round(extra)
         notes.append(f"{slots} conversations at once: {extra:.1f} GiB of RAM kept for the others' attention caches")
     mode = p.get("ram_mode", top.get("ram_mode", "auto"))
@@ -340,6 +349,15 @@ SAFE_ARG = re.compile(r"(--?[a-z0-9][a-z0-9-]{0,48}(=[A-Za-z0-9._:,+-]{0,256})?|
 SAFE_VALUE = re.compile(r"[A-Za-z0-9._:,+=-]{0,256}")       # an environment value: no paths, no spaces
 
 
+def gpu_problem(g) -> str | None:
+    """What is wrong with a "gpu" value (a preset's, or the profile's in "common"), or None: absent, or a list of 1 to 4
+    different card numbers as nvidia-smi numbers them."""
+    if g is None or (isinstance(g, list) and 1 <= len(g) <= 4 and len(set(g)) == len(g)
+                     and all(isinstance(x, int) and not isinstance(x, bool) and 0 <= x <= 7 for x in g)):
+        return None
+    return "gpu is a list of 1 to 4 different GPU numbers, as nvidia-smi numbers them ([0, 1])"
+
+
 def unsafe(cfg: dict, name: str) -> list[str]:
     """Why preset `name` must not run (empty: it may).  The rules of the console's editor that guard what the engine runs
     and where it listens (the editor checks more, for helpful messages)."""
@@ -362,10 +380,8 @@ def unsafe(cfg: dict, name: str) -> list[str]:
     for k, v in {**top.get("env", {}), **p.get("env", {})}.items():
         if v is not None and not SAFE_VALUE.fullmatch(str(v)):
             why.append(f"the value of {k} is not allowed (letters, digits and . _ : , + = - only)")
-    g = p.get("gpu", top.get("gpu"))
-    if g is not None and not (isinstance(g, list) and 1 <= len(g) <= 4 and len(set(g)) == len(g)
-                              and all(isinstance(x, int) and not isinstance(x, bool) and 0 <= x <= 7 for x in g)):
-        why.append("gpu is a list of 1 to 4 different GPU numbers, as nvidia-smi numbers them ([0, 1])")
+    if gpu_problem(p.get("gpu", top.get("gpu"))):
+        why.append(gpu_problem(p.get("gpu", top.get("gpu"))))
     eng = p.get("engine", cfg.get("engine", "strata"))
     if not isinstance(eng, str) or not ENGINE_NAME.fullmatch(eng):
         why.append(f"engine {eng!r} is not a file name in {ENGINE_DIR}")
