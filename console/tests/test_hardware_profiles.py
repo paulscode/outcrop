@@ -290,3 +290,34 @@ def test_a_mixed_pair_uses_both_cards_as_untested():
     other = {**M6000, "name": "NVIDIA GeForce RTX 3090", "uuid": "GPU-5"}
     f = {**machine(63), "gpus": [other, {**M6000, "index": "1"}]}
     assert P.suggest(f)[0] == "m6000-64g"                     # one M6000 beside another GPU: the one-card profile
+
+
+def test_two_card_profiles_find_their_cards_by_uuid(home, monkeypatch):
+    """The numbers shift when a card is added in a lower slot: they are worked out again from the UUIDs at every start;
+    a card that is gone is refused with the reason; a profile is not applied while its cards cannot be seen."""
+    import strata_presets as SP
+    r = P.render("m6000x2-64g", None, two(63))
+    assert r["common"]["gpu"] == [0, 1] and r["common"]["gpu_uuids"] == ["GPU-2", "GPU-3"]
+    monkeypatch.setattr(SP, "gpu_index_by_uuid", lambda: {"GPU-9": 0, "GPU-2": 1, "GPU-3": 2})   # a display card at 0
+    assert SP.card_numbers(r["common"]) == [1, 2]
+    monkeypatch.setattr(SP, "gpu_index_by_uuid", lambda: {"GPU-2": 0})
+    try:
+        SP.card_numbers(r["common"])
+        raise AssertionError("not refused")
+    except ValueError as e:
+        assert "1 of the 2 cards" in str(e)
+    monkeypatch.setattr(SP, "gpu_index_by_uuid", lambda: {})                                     # no nvidia-smi
+    assert SP.card_numbers(r["common"]) == [0, 1]
+    try:
+        P.render("m6000x2-64g", None, {**machine(63), "gpus": []})
+        raise AssertionError("applied without its cards")
+    except ValueError as e:
+        assert "2 cards and 0 can be seen" in str(e)
+
+
+def test_a_card_lost_with_more_ram_moves_without_a_download(home, monkeypatch):
+    monkeypatch.setattr(P, "facts", lambda: two(31))
+    P.apply("m6000x2-32g")
+    h = P.follow(machine(126))
+    assert h["change"] == "less" and h["moved"]["to"] == "m6000-32g"          # the same RAM's one-card profile
+    assert P.follow(machine(126))["target"] == "m6000-128g"                  # then the bigger one is offered

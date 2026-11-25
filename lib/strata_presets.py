@@ -349,6 +349,39 @@ SAFE_ARG = re.compile(r"(--?[a-z0-9][a-z0-9-]{0,48}(=[A-Za-z0-9._:,+-]{0,256})?|
 SAFE_VALUE = re.compile(r"[A-Za-z0-9._:,+=-]{0,256}")       # an environment value: no paths, no spaces
 
 
+UUID_RE = re.compile(r"GPU-[0-9a-fA-F-]{8,64}")
+
+
+def gpu_index_by_uuid() -> dict[str, int]:
+    """nvidia-smi's number for each card's UUID ({} when nvidia-smi cannot be run)."""
+    import subprocess
+    try:
+        out = subprocess.run(["nvidia-smi", "--query-gpu=index,uuid", "--format=csv,noheader"], capture_output=True,
+                             text=True, timeout=20).stdout
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    pairs = [ln.split(", ") for ln in out.splitlines() if ln.count(", ") == 1]
+    return {u.strip(): int(i) for i, u in pairs if i.strip().isdigit()}
+
+
+def card_numbers(common: dict) -> list[int]:
+    """The cards a two-card profile runs on, as nvidia-smi numbers them now: from their UUIDs ("gpu_uuids", kept when
+    the profile was applied), since a card added in a lower slot renumbers the others; else "gpu" as written.  Raises
+    ValueError when one of those cards is not in the machine."""
+    uuids, gpus = common.get("gpu_uuids"), common.get("gpu")
+    if not uuids:
+        return list(gpus or [])
+    now = gpu_index_by_uuid()
+    if not now:                                       # nvidia-smi cannot be run (a test, a fake engine): as written
+        return list(gpus or [])
+    missing = [u for u in uuids if u not in now]
+    if missing:
+        raise ValueError(f"{len(missing)} of the {len(uuids)} cards this hardware profile runs on are not in this "
+                         "machine now: apply the profile that fits (Update hardware settings on StartOS, `outcrop "
+                         "profile` on Ubuntu)")
+    return [now[u] for u in uuids]
+
+
 def gpu_problem(g) -> str | None:
     """What is wrong with a "gpu" value (a preset's, or the profile's in "common"), or None: absent, or a list of 1 to 4
     different card numbers as nvidia-smi numbers them."""
@@ -382,6 +415,9 @@ def unsafe(cfg: dict, name: str) -> list[str]:
             why.append(f"the value of {k} is not allowed (letters, digits and . _ : , + = - only)")
     if gpu_problem(p.get("gpu", top.get("gpu"))):
         why.append(gpu_problem(p.get("gpu", top.get("gpu"))))
+    u = top.get("gpu_uuids")
+    if u is not None and not (isinstance(u, list) and len(u) <= 4 and all(isinstance(x, str) and UUID_RE.fullmatch(x) for x in u)):
+        why.append("gpu_uuids is a list of up to 4 card UUIDs, as nvidia-smi prints them (GPU-...)")
     eng = p.get("engine", cfg.get("engine", "strata"))
     if not isinstance(eng, str) or not ENGINE_NAME.fullmatch(eng):
         why.append(f"engine {eng!r} is not a file name in {ENGINE_DIR}")
@@ -425,7 +461,7 @@ def render(name: str, cfg: dict | None = None) -> tuple[Path, list[str]]:
         "engine_ready_s": 1800,
         "open_browser": False,
     }
-    gpus = p.get("gpu", cfg.get("common", {}).get("gpu"))
+    gpus = p.get("gpu") or card_numbers(cfg.get("common", {}))
     if gpus:
         # the cards to run on, numbered as nvidia-smi numbers them: two or more are Strata's layer split
         # (docs/MULTI_GPU.md); Strata sets CUDA_VISIBLE_DEVICES from it, so the profile's one-card pin goes.  A preset's

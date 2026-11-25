@@ -232,9 +232,15 @@ def render(name: str, current: dict | None = None, f: dict | None = None) -> dic
     out = {k: v for k, v in prof.items() if k != "profile"}
     n = gpu_count(prof)
     if f and n > 1:
-        # a profile for several cards: Strata's layer split across the first n of them (numbered as nvidia-smi does)
+        # a profile for several cards: Strata's layer split across the first n of them.  Their UUIDs are kept beside
+        # the numbers (nvidia-smi's, as Strata reads them): a card added in a lower slot renumbers the others, and the
+        # numbers are worked out again from the UUIDs at every start (strata_presets.render)
         cards = matched_gpus(prof, f)[:n]
+        if len(cards) < n:
+            raise ValueError(f"profile {name} runs on {n} cards and {len(cards)} can be seen (is the NVIDIA driver "
+                             "working? `nvidia-smi` should list them)")
         out.setdefault("common", {})["gpu"] = [int(g["index"]) for g in cards]
+        out["common"]["gpu_uuids"] = [g["uuid"] for g in cards]
     elif f and len(f.get("gpus", [])) > 1:
         g = matched_gpu(prof, f)
         if g and g.get("uuid"):
@@ -408,6 +414,11 @@ def hardware(cfg: dict | None = None, f: dict | None = None) -> dict:
     target = fits
     if not still and gpu_same and have < cur_cards:
         out["change"] = "less"                        # a card taken out, or failed: the split cannot start
+        # by itself only to a profile that needs no download: the two-card profile's own one-card profile (the same
+        # RAM), when what fits now is for more RAM; that is offered at the next start
+        parent = (cp["profile"].get("extends") if cp else None)
+        if cp and _ram_low(fits) > _ram_low(cur) and parent and parent in names() and gpu_count(compose(parent)) <= have:
+            target = parent
     elif not still and gpu_same and lower:
         out["change"] = "less"
         if gpu_count(fp) > cur_cards:                 # never a second card by itself: the best fit with as many as before
