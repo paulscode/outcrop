@@ -23,6 +23,9 @@ CASES = {
               + "Summarize the structure of these records and explain how to look up a record by its ID.",
     "doc48k": "".join(f"record{i:06d}: alpha beta gamma delta epsilon zeta eta theta.\n" for i in range(1, 2501))
               + "Summarize the structure of these records and explain how to look up a record by its ID.",
+    # about 190K tokens: for the 1M-token presets, past what their attention cache keeps on the card
+    "doc192k": "".join(f"record{i:06d}: alpha beta gamma delta epsilon zeta eta theta.\n" for i in range(1, 10001))
+               + "Summarize the structure of these records and explain how to look up a record by its ID.",
 }
 
 def default_key():

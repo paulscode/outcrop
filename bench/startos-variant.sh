@@ -13,7 +13,8 @@
 # ~/.config/outcrop-test/token).  BASE=PRESET starts from that preset's settings (the GB10's prefill and draft
 # options) instead of a bare one, CONTEXT sets the context (default 262144), and ARGS
 # adds engine options ("--ple-io ram"), GPUS the cards to run on ("0,1": Strata's layer split across two), ENVS engine settings ("STRATA_MTP_STAGE0=1,K=V"),
-# PARALLEL conversations decoded together (the preset's "parallel": Strata's --batch).  PACK "shipped" measures the service's own preset NAME as it is (step 1 skipped).
+# PARALLEL conversations decoded together (the preset's "parallel": Strata's --batch), KVR the attention cache's cells
+# per layer kept on the card(s) (the preset's "kv_resident"; the rest is in pinned RAM).  PACK "shipped" measures the service's own preset NAME as it is (step 1 skipped).
 # TAG (32g, say) goes in the file name.  Writes bench/results/startos-<host>-[<TAG>-]<NAME>-<date>.json.
 set -euo pipefail
 NAME=${1:?usage: startos-variant.sh NAME PACK [BUDGET_GIB|auto] [CONV_CACHE_MIB|default]}
@@ -52,9 +53,9 @@ PY'
 }
 
 echo "== $NAME: $PACK, budget $BUDGET, conversation cache $CONV, on $HOST"
-[ "$PACK" = shipped ] || ssh -o BatchMode=yes "start9@$HOST" "$ATTACH python3 - '$NAME' '$PACK' '$BUDGET' '$CONV' '${BASE:-}' '${CONTEXT:-262144}' '${ARGS:-}' '${GPUS:-}' '${ENVS:-}' '${PARALLEL:-}'" <<'PY'
+[ "$PACK" = shipped ] || ssh -o BatchMode=yes "start9@$HOST" "$ATTACH python3 - '$NAME' '$PACK' '$BUDGET' '$CONV' '${BASE:-}' '${CONTEXT:-262144}' '${ARGS:-}' '${GPUS:-}' '${ENVS:-}' '${PARALLEL:-}' '${KVR:-}'" <<'PY'
 import json, os, sys
-name, pack, budget, conv, base, context, extra, gpus, envs, par = sys.argv[1:11]
+name, pack, budget, conv, base, context, extra, gpus, envs, par, kvr = sys.argv[1:12]
 path = os.environ.get("OUTCROP_HOME", "/data") + "/presets.json"
 c = json.load(open(path))
 p = dict(c["presets"][base]) if base else {}
@@ -71,6 +72,8 @@ if gpus:
     p["gpu"] = [int(x) for x in gpus.split(",")]
 if par:
     p["parallel"] = int(par)
+if kvr:
+    p["kv_resident"] = int(kvr)
 if envs:
     p["env"] = {**p.get("env", {}), **dict(kv.split("=", 1) for kv in envs.split(","))}
 c["presets"][name] = p
